@@ -1,0 +1,6 @@
+data/
+*.pgn
+*.pgn.zst
+__pycache__/
+*.pyc
+.env
