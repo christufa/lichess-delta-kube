@@ -1,106 +1,223 @@
 # lichess-games-download
 
-Downloads monthly Lichess game archives from [database.lichess.org](https://database.lichess.org), parses them into structured Parquet files, and uploads them to the HuggingFace dataset [christopher3/lichess-games](https://huggingface.co/datasets/christopher3/lichess-games).
+A Databricks bundle that downloads monthly Lichess archives, parses games with
+Spark, stores them in a Unity Catalog Delta table, and exports Parquet to the
+Hugging Face dataset `christopher3/lichess-games`.
 
-## How it works
-
-```
-Lichess HTTP (.pgn.zst)
-        │
-        │  streamed — never written to disk
-        ▼
-  zstd decompress
-        │
-        ▼
-  PGN parser (python-chess)
-        │  200k games per batch by default
-        ▼
-  Parquet shard (pandas + pyarrow)
-        │
-        ▼
-  HuggingFace dataset
-  data/<variant>/<YYYY-MM>/part-NNNN.parquet
+```text
+Lichess .pgn.zst -> Unity Catalog volume -> JSONL game chunks
+                                              |
+                                     Spark mapInPandas
+                                              |
+                                  Delta games table
+                                              |
+                                   Spark Parquet export
+                                              |
+                                      Hugging Face
 ```
 
-Archives are streamed directly from Lichess to HuggingFace — no intermediate files are written to disk. This keeps disk usage well within GitHub Actions' ~14 GB limit even for large monthly dumps.
+## Project structure
 
-Each run checks the HF repo first; if `data/<variant>/<YYYY-MM>/part-0000.parquet` already exists the archive is skipped.
-
-## Files
+The pipeline keeps application code in `src/` and job configuration in `resources/`.
 
 | File | Purpose |
-|---|---|
-| `src/pipeline.py` | Main entry point — orchestrates the full pipeline |
-| `src/01_download.py` | Download `.pgn.zst` archives to disk (local use) |
-| `src/02_decompress.py` | Decompress `.pgn.zst` → `.pgn` (local use) |
-| `src/03_upload.py` | Parse and upload to HuggingFace (local use) |
-| `Dockerfile` | Container image used in CI and local Docker runs |
-| `docker-compose.yml` | Local Docker runner with volume + env wiring |
-| `.github/workflows/pipeline.yml` | GitHub Actions workflow — runs on the 5th of each month |
+| --- | --- |
+| `databricks.yml` | Bundle variables and dev/prod targets |
+| `resources/lichess_job.yml` | Four dependent tasks with automatic retries |
+| `src/download.py` | Download compressed archives and record their paths |
+| `src/extract.py` | Decompress and split games into JSONL chunks |
+| `src/insert.py` | Parse games with Spark and insert into Delta |
+| `src/upload.py` | Export a Delta snapshot and upload to Hugging Face |
+| `src/common.py`, `src/schema.py` | Task configuration, manifests and dataset columns |
+| `src/game_parser.py` | Headers, moves, clocks, evaluations and FEN parser |
+| `requirements-dev.txt` | Dependencies for local tests |
 
-## Running locally
+## Pipeline tasks
 
-**Prerequisites:** Docker, and an HF token with write access to the dataset.
+One Databricks job orchestrates four separate Python tasks:
 
-1. Create a `.env` file:
-   ```
-   HF_TOKEN=hf_xxxxxxxxxxxxxxxxxxxx
-   ```
-
-2. Run the pipeline:
-   ```bash
-   docker compose run pipeline --variant standard --year 2024 --month 1
-   ```
-
-   Downloaded archives appear in `./data/raw/` so you can inspect them. Pass `--limit N` to process only the first N files.
-
-3. To use the individual scripts directly (no Docker):
-   ```bash
-   pip install -r requirements.txt
-   python src/01_download.py --variant standard --year 2024 --month 1
-   python src/03_upload.py --raw-dir data/raw
-   ```
-
-## GitHub Actions setup
-
-1. Push this repo to GitHub.
-2. Go to **Settings → Secrets and variables → Actions** and add:
-   - `HF_TOKEN` — your HuggingFace write token
-
-The workflow (`.github/workflows/pipeline.yml`) runs automatically on the **5th of each month** and processes the previous month's standard games. You can also trigger it manually via **Actions → Lichess → HuggingFace → Run workflow** and supply custom `variant`, `year`, `month`, or `limit` inputs.
-
-## Dataset layout on HuggingFace
-
-```
-christopher3/lichess-games/
-└── data/
-    └── standard/
-        └── 2024-01/
-            ├── part-0000.parquet   # 200k games by default
-            ├── part-0001.parquet
-            └── ...
+```text
+download -> extract -> insert -> upload
 ```
 
-Each Parquet row contains:
+Each task has its own entry point, dependencies and retry policy (two retries,
+with a 60-second minimum interval). Tasks use serverless compute with a separate dependency environment for each
+stage. No existing cluster is required.
 
-| Column | Type | Description |
-|---|---|---|
-| `source_id` | string | Lichess game ID |
-| `variant` | string | e.g. `standard` |
-| `event` | string | Time control category |
-| `white_username` | string | |
-| `white_rating` | int | Elo at time of game |
-| `white_rating_diff` | int | Rating change |
-| `black_username` | string | |
-| `black_rating` | int | |
-| `black_rating_diff` | int | |
-| `result` | string | `1-0`, `0-1`, or `1/2-1/2` |
-| `termination` | string | e.g. `Normal`, `Time forfeit` |
-| `played_at` | timestamp | UTC |
-| `time_control` | string | e.g. `600+0` |
-| `eco` | string | Opening code |
-| `opening` | string | Opening name |
-| `pgn` | string | Full PGN text |
-| `moves` | string | JSON array of move objects |
+The stages pass durable manifests through the run's Unity Catalog volume directory:
 
-Each move object: `{"n": 1, "c": "w", "san": "e4", "fen": "...", "eval_cp": 18, "clk": 598}`
+| Stage | Input | Completed output |
+| --- | --- | --- |
+| Download | Lichess index and selected month | Cached archives + `downloads.json` |
+| Extract | `downloads.json` | Complete-game JSONL chunks + `archives.json` |
+| Insert | `archives.json` | Delta partitions + versioned `delta.json` |
+| Upload | `delta.json` | HF Parquet shards + `.done` marker |
+
+Use **Repair run** on a failed job to rerun the failed stage and its downstream
+tasks. For example, an upload failure can be repaired without downloading,
+extracting or parsing again. A manifest is published only after its stage
+finishes successfully. Completed stages are reused even across new job runs.
+For a deliberate rebuild, remove that month's destination-specific checkpoint
+directory before starting the full job again.
+
+A single job keeps run IDs, dependencies and repair history together. Separate
+Databricks jobs would be useful if stages needed independent schedules or were
+shared with other pipelines; this monthly flow does not currently need that.
+See [Databricks task dependencies](https://docs.databricks.com/aws/en/jobs/run-if).
+
+## Databricks setup
+
+1. Install the Databricks CLI and authenticate to your workspace:
+
+   ```sh
+   databricks auth login --host https://YOUR_WORKSPACE
+   ```
+
+2. Use a workspace with serverless jobs and Unity Catalog enabled. The default
+   catalog is `brikt`. The job identity needs permission to create a schema,
+   volume and table (or access to pre-created equivalents). Serverless compute
+   needs outbound access to Lichess, PyPI and Hugging Face. The environment
+   supplies Spark, Delta, pandas and PyArrow; each task declares its additional
+   dependencies in the job YAML.
+
+3. Store the HF write token in Databricks Secrets:
+
+   ```sh
+   databricks secrets create-scope lichess
+   databricks secrets put-secret lichess hf-token
+   ```
+
+   Enter the token at the prompt. The job reads it only during upload. `.env`
+   is excluded from bundle sync and is not used by the pipeline.
+
+4. Validate and deploy with the authenticated profile (PowerShell):
+
+   ```powershell
+   databricks bundle validate -p brikt -t dev
+   databricks bundle deploy -p brikt -t dev
+   # Start processing only when ready:
+   databricks bundle run -p brikt -t dev lichess_pipeline --params year=2024,month=1
+   ```
+
+   The dev target writes to `brikt.lichess_dev.games` and
+   `christopher3/lichess-games-dev`. New HF repositories are private; existing
+   repository visibility is unchanged. Override `hf_repo` if needed.
+
+5. Deploy/run `-t prod` for `brikt.lichess.games` and
+   `christopher3/lichess-games`. Its schedule defaults to paused; the existing
+   dev deployment has the monthly schedule enabled.
+
+Available bundle variables: `catalog`, `schema`, `volume`, `table`,
+`hf_repo`, `hf_secret_scope`, `hf_secret_key`, `schedule_status`. Set them using `BUNDLE_VAR_<name>`
+or `--var 'catalog=another_catalog'`. Give separate deployments distinct
+schemas/volumes if they must run independently.
+
+Job parameters: `variant` (default `standard`), `year`, `month`, `limit` (default
+1 archive), and `shard_size` (default 200,000 rows per exported file maximum).
+Both year and month default to 0, selecting the previous calendar month at job
+start. Explicit dates require both values. Backfill by running once per month.
+
+## Monthly schedule and completion history
+
+The existing **dev job** runs on the **5th of every month at 06:00 America/New_York**,
+using the previous calendar month. The first scheduled run after this change is
+October 5, 2026, for September 2026. The schedule is defined in the bundle and
+explicitly enabled for dev; prod remains paused to avoid duplicate schedules.
+Destinations remain `brikt.lichess_dev.games` and `christopher3/lichess-games-dev`.
+
+The 5th allows time for publication: the [Lichess directory listing](https://database.lichess.org/standard/)
+shows archive timestamps on the 2nd of the following month. This is a scheduling
+buffer, not a publication guarantee. A missing archive fails visibly; repair it
+with the original explicit year/month once available. The monthly schedule does
+not automatically backfill older missed months.
+
+Successful stages write persistent JSON checkpoints under:
+
+```text
+/Volumes/<catalog>/<schema>/<volume>/history/<destination-hash>/<variant>/<YYYY-MM>/
+    download.json
+    extract.json
+    insert.json
+    upload.json
+```
+
+The destination hash includes the Delta table and HF repository. Each record
+contains a UTC completion timestamp, original run ID and source archive metadata.
+Insertion adds the Delta version and row count; upload adds the HF commit ID and
+shard count. Databricks job runs retain task execution status and logs separately.
+
+- A completed upload causes future runs of that month to skip all data work,
+  even if the cached archive has since been removed.
+- If insertion completed but upload failed, a new run reuses the recorded Delta
+  snapshot without downloading, extracting or parsing again.
+- If extraction completed, its game chunks are reused; if only download completed,
+  the cached archive is reused. Partial downloads resume using HTTP Range.
+- Completion is recorded after each successful stage. An interrupted operation
+  before its checkpoint is saved can repeat; Delta partition replacement and HF
+  month-folder replacement prevent duplicate rows from those retries.
+
+Keep the history directory. Retain extracted files and Delta versions needed by
+unfinished months. Checkpoints assume this pipeline owns its destination data;
+manual removal of Delta/HF data is not automatically detected. Existing uploads
+from before this checkpoint system are not automatically imported as history.
+To deliberately rebuild a month, remove its checkpoint directory for the correct
+destination, then run with that explicit year/month. Retaining the raw archive
+still avoids downloading it again. No historical data is deleted automatically.
+
+## Storage, parallelism and retries
+
+- Archives are cached under `/Volumes/<catalog>/<schema>/<volume>/raw/`.
+  Decompression streams on the driver, writing approximately 64 MiB JSONL files
+  with one complete PGN per line. It never loads an archive into memory.
+- Spark distributes these files and parses games using `mapInPandas`; small
+  output batches bound expanded move-history memory while creating potentially large move histories.
+  A single compressed archive is not independently splittable: downloading and
+  splitting remain driver work. Spark accelerates parsing and table/export I/O.
+- Delta is partitioned by `variant` and `archive_month`. A rerun atomically
+  replaces that month's partition using `replaceWhere`. Invalid PGN fails the
+  write rather than silently dropping games. The saved row count is checked
+  against the staging manifest before upload can run.
+- The upload task reads the recorded Delta version, writes Parquet with Spark,
+  then uploads from the volume without collecting games on the driver. The HF
+  folder remains `data/<variant>/<YYYY-MM>/*.parquet`. A `.done` JSON marker
+  records the source table, Delta version, row count and shard count. Old shards
+  in that same month are replaced in the upload commit. Other months stay intact.
+- Task repair can retry the failed stage using manifests under
+  `.../runs/<job-run-id>/`. New runs reuse the persistent stage checkpoints
+  described below. The job
+  allows one concurrent run. Do not have another job write the same table or HF
+  month concurrently; version attribution assumes this job owns table writes.
+- Staged JSONL, raw downloads and exports are retained for repair and inspection.
+  Plan volume capacity for all three, and remove completed run directories and
+  raw archives according to your retention policy. Delta versions must remain
+  available until upload/repair completes; avoid vacuuming them early.
+
+## Dataset schema
+
+The existing row content is preserved: `game_id`, `variant`, `event`, `site`,
+player usernames, Elo ratings, rating differences, titles, teams, result,
+termination, UTC `played_at`, time control and its components, opening/ECO,
+initial FEN, ply count, PGN and a JSON `moves` string. Numeric game fields use
+the existing 16-bit types (32-bit for initial time). Delta adds `archive_month`; this extra
+partition field is omitted from HF exports.
+
+Each move retains ply number, color, SAN/UCI, resulting FEN, clock, time spent,
+centipawn/mate evaluation, NAGs and human comments.
+
+## Tests
+
+Runtime dependencies are declared in the job YAML. Install the development
+requirements to run the parser, staging and download tests locally:
+
+```sh
+python -m pip install -r requirements-dev.txt
+python -m pytest -q
+```
+
+A deployed smoke run is still required to validate job permissions, volume
+access, Spark execution and HF credentials. The local tests do not simulate a
+Databricks workspace.
+
+References: [Databricks bundle examples](https://docs.databricks.com/aws/en/dev-tools/bundles/examples),
+[Delta selective overwrite](https://docs.databricks.com/aws/en/delta/selective-overwrite),
+[Hugging Face uploads](https://huggingface.co/docs/huggingface_hub/guides/upload).

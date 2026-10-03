@@ -1,8 +1,0 @@
-requests==2.34.2
-beautifulsoup4==4.14.3
-tqdm==4.67.3
-zstandard==0.25.0
-huggingface_hub==1.17.0
-chess==1.10.0
-pyarrow==16.1.0
-pandas==2.2.2

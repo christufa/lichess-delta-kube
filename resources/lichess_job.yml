@@ -1,0 +1,140 @@
+resources:
+  jobs:
+    lichess_pipeline:
+      name: lichess-delta-hf-${bundle.target}
+      max_concurrent_runs: 1
+      parameters:
+      - name: variant
+        default: standard
+      - name: year
+        default: '0'
+      - name: month
+        default: '0'
+      - name: limit
+        default: '1'
+      - name: shard_size
+        default: '200000'
+      tasks:
+      - task_key: download
+        max_retries: 2
+        min_retry_interval_millis: 60000
+        spark_python_task:
+          python_file: ../src/download.py
+          parameters:
+          - --catalog
+          - ${var.catalog}
+          - --schema
+          - ${var.schema}
+          - --volume
+          - ${var.volume}
+          - --run-id
+          - '{{job.run_id}}'
+          - --variant
+          - '{{job.parameters.variant}}'
+          - --year
+          - '{{job.parameters.year}}'
+          - --month
+          - '{{job.parameters.month}}'
+          - --limit
+          - '{{job.parameters.limit}}'
+          - --table
+          - ${var.table}
+          - --repo
+          - ${var.hf_repo}
+        environment_key: download
+      - task_key: extract
+        depends_on:
+        - task_key: download
+        max_retries: 2
+        min_retry_interval_millis: 60000
+        spark_python_task:
+          python_file: ../src/extract.py
+          parameters:
+          - --catalog
+          - ${var.catalog}
+          - --schema
+          - ${var.schema}
+          - --volume
+          - ${var.volume}
+          - --run-id
+          - '{{job.run_id}}'
+          - --table
+          - ${var.table}
+          - --repo
+          - ${var.hf_repo}
+        environment_key: extract
+      - task_key: insert
+        depends_on:
+        - task_key: extract
+        max_retries: 2
+        min_retry_interval_millis: 60000
+        spark_python_task:
+          python_file: ../src/insert.py
+          parameters:
+          - --catalog
+          - ${var.catalog}
+          - --schema
+          - ${var.schema}
+          - --volume
+          - ${var.volume}
+          - --run-id
+          - '{{job.run_id}}'
+          - --table
+          - ${var.table}
+          - --repo
+          - ${var.hf_repo}
+        environment_key: insert
+      - task_key: upload
+        depends_on:
+        - task_key: insert
+        max_retries: 2
+        min_retry_interval_millis: 60000
+        spark_python_task:
+          python_file: ../src/upload.py
+          parameters:
+          - --catalog
+          - ${var.catalog}
+          - --schema
+          - ${var.schema}
+          - --volume
+          - ${var.volume}
+          - --run-id
+          - '{{job.run_id}}'
+          - --table
+          - ${var.table}
+          - --repo
+          - ${var.hf_repo}
+          - --secret-scope
+          - ${var.hf_secret_scope}
+          - --secret-key
+          - ${var.hf_secret_key}
+          - --shard-size
+          - '{{job.parameters.shard_size}}'
+        environment_key: upload
+      environments:
+      - environment_key: download
+        spec:
+          environment_version: '4'
+          dependencies:
+          - requests>=2.32,<3
+          - beautifulsoup4>=4.12,<5
+          - tqdm>=4.66,<5
+      - environment_key: extract
+        spec:
+          environment_version: '4'
+          dependencies:
+          - zstandard>=0.23,<1
+      - environment_key: insert
+        spec:
+          environment_version: '4'
+          dependencies:
+          - chess==1.10.0
+      - environment_key: upload
+        spec:
+          environment_version: '4'
+          dependencies:
+          - huggingface_hub==0.36.0
+      schedule:
+        quartz_cron_expression: 0 0 6 5 * ?
+        timezone_id: America/New_York
+        pause_status: ${var.schedule_status}
