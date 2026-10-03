@@ -43,6 +43,10 @@ targets:
       schema: lichess_dev
       hf_repo: christopher3/lichess-games-dev
       schedule_status: UNPAUSED
+    bundle:
+      deployment:
+        lock:
+          enabled: true
   prod:
     mode: production
     workspace:

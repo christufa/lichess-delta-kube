@@ -137,6 +137,41 @@ Job parameters: `variant` (default `standard`), `year`, `month`, `limit` (defaul
 Both year and month default to 0, selecting the previous calendar month at job
 start. Explicit dates require both values. Backfill by running once per month.
 
+## GitHub Actions deployment
+
+`.github/workflows/databricks.yml` runs **Tests and wheel** on pull requests to
+`main`. Pushes/merges to `main` run the same checks and then validate and deploy
+the existing `dev` bundle. You can also select **Run workflow** on `main` to retry
+a deployment. The workflow deploys the job definition; it does not start a data
+run or deploy the prod target.
+
+The `databricks-dev` GitHub environment is restricted to the `main` branch and
+has already been configured with:
+
+- Variable `DATABRICKS_HOST`: the brikt workspace URL.
+- Variable `DATABRICKS_DEPLOY_USER`: `chris.lavalle00@gmail.com`.
+- Secret `DATABRICKS_TOKEN`: a dedicated 90-day deployment token for that user.
+
+The current token expires **January 1, 2027 at 19:07 UTC**. Rotate it before then
+by creating a replacement Databricks token and updating `DATABRICKS_TOKEN` under
+GitHub Settings -> Environments -> databricks-dev. The workflow never needs the
+HF token; the running Databricks job reads that from its existing secret scope.
+PR test jobs have no access to deployment secrets.
+
+Deployment verifies the authenticated user before updating the bundle. This
+preserves the existing user-scoped dev deployment and avoids creating a second
+scheduled job under another identity. Deployments are serialized and bundle
+locking is enabled. Deployment fails while a data run is active; rerun the
+GitHub deployment after the data run ends. It does not cancel that run.
+
+For longer-term automation, migrate to a service principal with GitHub OIDC and
+explicitly migrate/bind the existing bundle state and job permissions. Simply
+swapping the identity would create a different dev deployment.
+
+You can now require the **Tests and wheel** check in `protect-main` after its
+first successful GitHub run. Deployment runs after merge and should not be a
+required PR check.
+
 ## Monthly schedule and completion history
 
 The existing **dev job** runs on the **5th of every month at 06:00 America/New_York**,
