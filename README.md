@@ -24,17 +24,19 @@ The pipeline keeps application code in `src/` and job configuration in `resource
 | --- | --- |
 | `databricks.yml` | Bundle variables and dev/prod targets |
 | `resources/lichess_job.yml` | Four dependent tasks with automatic retries |
-| `src/download.py` | Download compressed archives and record their paths |
-| `src/extract.py` | Decompress and split games into JSONL chunks |
-| `src/insert.py` | Parse games with Spark and insert into Delta |
-| `src/upload.py` | Export a Delta snapshot and upload to Hugging Face |
-| `src/common.py`, `src/schema.py` | Task configuration, manifests and dataset columns |
-| `src/game_parser.py` | Headers, moves, clocks, evaluations and FEN parser |
-| `requirements-dev.txt` | Dependencies for local tests |
+| `src/lichess_pipeline/download.py` | Download compressed archives and record their paths |
+| `src/lichess_pipeline/extract.py` | Decompress and split games into JSONL chunks |
+| `src/lichess_pipeline/insert.py` | Parse games with Spark and insert into Delta |
+| `src/lichess_pipeline/upload.py` | Export a Delta snapshot and upload to Hugging Face |
+| `src/lichess_pipeline/common.py`, `src/lichess_pipeline/schema.py` | Task configuration, manifests and dataset columns |
+| `src/lichess_pipeline/game_parser.py` | Headers, moves, clocks, evaluations and FEN parser |
+| `src/lichess_pipeline/observability.py` | Structured logs and operation heartbeats |
+| `pyproject.toml` | Installable wheel and four task entry points |
+| `requirements-dev.txt` | Dependencies for tests and wheel builds |
 
 ## Pipeline tasks
 
-One Databricks job orchestrates four separate Python tasks:
+One Databricks job orchestrates four installed Python wheel tasks:
 
 ```text
 download -> extract -> insert -> upload
@@ -42,7 +44,10 @@ download -> extract -> insert -> upload
 
 Each task has its own entry point, dependencies and retry policy (two retries,
 with a 60-second minimum interval). Tasks use serverless compute with a separate dependency environment for each
-stage. No existing cluster is required.
+stage. No existing cluster is required. The bundle builds a versioned wheel and
+uploads it to a Unity Catalog volume. Tasks run the installed entry points, and
+Spark workers import the same installed package; they do not open application
+scripts under `/Workspace`.
 
 The stages pass durable manifests through the run's Unity Catalog volume directory:
 
@@ -90,7 +95,22 @@ See [Databricks task dependencies](https://docs.databricks.com/aws/en/jobs/run-i
    Enter the token at the prompt. The job reads it only during upload. `.env`
    is excluded from bundle sync and is not used by the pipeline.
 
-4. Validate and deploy with the authenticated profile (PowerShell):
+4. Install build dependencies and create the artifact volume **before the first
+   deployment** (skip creation commands when these resources already exist):
+
+   ```powershell
+   python -m pip install -r requirements-dev.txt
+   databricks schemas create lichess_dev brikt -p brikt
+   databricks volumes create brikt lichess_dev staging MANAGED -p brikt
+   ```
+
+   These resources have already been created for the `brikt` dev workspace. For
+   prod, bootstrap `brikt.lichess.staging` instead. The deploy identity needs
+   WRITE VOLUME and the job identity needs READ VOLUME for wheel installation,
+   plus the existing pipeline data privileges. Artifact upload happens before
+   task execution, so the job cannot bootstrap its own artifact volume.
+
+5. Validate and deploy with the authenticated profile (PowerShell):
 
    ```powershell
    databricks bundle validate -p brikt -t dev
@@ -103,7 +123,7 @@ See [Databricks task dependencies](https://docs.databricks.com/aws/en/jobs/run-i
    `christopher3/lichess-games-dev`. New HF repositories are private; existing
    repository visibility is unchanged. Override `hf_repo` if needed.
 
-5. Deploy/run `-t prod` for `brikt.lichess.games` and
+6. Deploy/run `-t prod` for `brikt.lichess.games` and
    `christopher3/lichess-games`. Its schedule defaults to paused; the existing
    dev deployment has the monthly schedule enabled.
 
@@ -192,6 +212,43 @@ still avoids downloading it again. No historical data is deleted automatically.
   raw archives according to your retention policy. Delta versions must remain
   available until upload/repair completes; avoid vacuuming them early.
 
+## Logs and startup troubleshooting
+
+Open the job run, select a task, then view its output. The pipeline emits JSON
+lines to stdout, which Databricks captures with the task output. Each event has a
+UTC timestamp, level, stage and run ID. Logs include:
+
+- Task start, completion, failure tracebacks and elapsed time, including Spark
+  session initialization failures.
+- Selected month, discovered archives, download cache hits and checkpoint reuse.
+- Download byte counts/rate and extraction game counts/rate approximately every
+  30 seconds while work advances.
+- A liveness heartbeat every 60 seconds for long download/extraction, Delta write,
+  verification, Parquet export and HF upload operations. Heartbeats indicate that
+  an operation is still pending, not a percentage complete or proof of progress.
+- Row counts, shard sizes/counts, committed Delta versions and HF commit IDs.
+
+Logs omit game content, token values and request headers. The JSON formatter
+redacts HF token patterns, bearer credentials and URL query strings in failure
+traces. Logging does not require a functioning volume. Completion checkpoints
+remain separate from logs; failures never create successful completion events.
+
+A `BlobCustomerSpecifiedEncryptionMismatch` when Databricks tries to open
+`/Workspace/.../download.py` occurs **before application startup**. The old script
+launcher cannot catch or log that error. This bundle uses installed wheel tasks
+with artifacts under `/Volumes/...` to avoid that workspace-file access path.
+It does not change Azure encryption keys or repair the underlying storage
+configuration. If wheel installation or volume access reports the same error,
+inspect Databricks platform output and escalate with the Azure request ID and
+Databricks trace ID. Application logs cannot cover failures before the wheel
+entry point starts.
+
+After merging this change, redeploy with `databricks bundle deploy -p brikt -t dev`
+and repair the failed run using the updated task definitions. The wheel uses a
+dynamic build version to avoid reusing a stale serverless environment package.
+Do not run `src/lichess_pipeline/*.py` directly; use the wheel entry points or
+`python -m lichess_pipeline.<stage>` with `src` on PYTHONPATH.
+
 ## Dataset schema
 
 The existing row content is preserved: `game_id`, `variant`, `event`, `site`,
@@ -212,6 +269,7 @@ requirements to run the parser, staging and download tests locally:
 ```sh
 python -m pip install -r requirements-dev.txt
 python -m pytest -q
+python -m build --wheel
 ```
 
 A deployed smoke run is still required to validate job permissions, volume

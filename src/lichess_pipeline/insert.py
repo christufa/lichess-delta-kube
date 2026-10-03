@@ -1,13 +1,14 @@
 """Parse staged PGN games with Spark and replace their Delta partitions."""
 import io
+from .observability import event, operation
 
-from common import read_json, write_json, partition_filter, run_task, checkpoint, record_completion
-from schema import STRING_COLUMNS, INT_COLUMNS, COLUMNS
+from .common import read_json, write_json, partition_filter, run_task, checkpoint, record_completion
+from .schema import STRING_COLUMNS, INT_COLUMNS, COLUMNS
 
 def parse_batches(batches):
     import chess.pgn
     import pandas as pd
-    from game_parser import _game_to_row
+    from .game_parser import _game_to_row
     for batch in batches:
         rows = []
         for text in batch.pgn:
@@ -31,6 +32,7 @@ def ingest(args, spark, root):
             results.append(saved)
         else:
             pending.append(archive)
+    event("insert.plan", pending=len(pending), reused=len(results))
     if not pending:
         write_json(root / "delta.json", results)
         return
@@ -48,12 +50,15 @@ def ingest(args, spark, root):
                 .withColumn("variant", F.lit(archive["variant"]))
                 .withColumn("archive_month", F.lit(archive["month"])))
         predicate = partition_filter(archive)
-        (rows.write.format("delta").mode("overwrite")
-             .option("replaceWhere", predicate)
-             .partitionBy("variant", "archive_month").saveAsTable(args.full_table))
+        with operation("delta.write", variant=archive["variant"], month=archive["month"], expected_games=archive["games"]):
+            (rows.write.format("delta").mode("overwrite")
+                 .option("replaceWhere", predicate)
+                 .partitionBy("variant", "archive_month").saveAsTable(args.full_table))
         version = spark.sql(f"DESCRIBE HISTORY {args.full_table} LIMIT 1").first()["version"]
         saved = spark.read.option("versionAsOf", version).table(args.full_table).where(predicate)
-        count = saved.count()
+        with operation("delta.verify", delta_version=version):
+            count = saved.count()
+        event("delta.committed", delta_version=version, games=count, month=archive["month"])
         if count != archive["games"]:
             raise ValueError(f"Row count mismatch: {count} != {archive['games']}")
         completed = {**archive, "version": version}

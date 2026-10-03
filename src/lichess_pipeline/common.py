@@ -3,13 +3,11 @@ import argparse
 import json
 import hashlib
 import re
-import sys
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from pathlib import Path
+from .observability import configure_logging, event, operation
 
-# Databricks distributes modules on this path to Spark workers.
-sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 def selected_period(year, month):
     if year == 0 and month == 0:
@@ -46,6 +44,8 @@ def checkpoint(root, args, archive, stage):
         record = read_json(path)
         if record["table"] != args.full_table or record["repo"] != args.repo:
             raise ValueError("Checkpoint destination mismatch")
+        event("checkpoint.reused", checkpoint_stage=stage, variant=archive["variant"],
+              month=archive["month"], original_run_id=record["run_id"])
         return record["archive"]
     return None
 
@@ -55,7 +55,9 @@ def record_completion(root, args, archive, stage):
               "run_id": root.name, "completed_at": datetime.now(timezone.utc).isoformat(),
               "archive": archive}
     write_json(history_directory(root, args, archive) / f"{stage}.json", record)
-    print(f"Completed {stage}: {archive['variant']}/{archive['month']}", flush=True)
+    event("checkpoint.saved", checkpoint_stage=stage, variant=archive["variant"],
+          month=archive["month"], games=archive.get("games"),
+          delta_version=archive.get("version"), hf_commit=archive.get("hf_commit"))
 
 
 def run_task(handler, stage):
@@ -81,14 +83,17 @@ def run_task(handler, stage):
         selected_period(args.year, args.month)
     if stage == "upload" and args.shard_size <= 0:
         parser.error("shard-size must be positive")
-    from pyspark.sql import SparkSession
-    spark = SparkSession.builder.getOrCreate()
-    namespace = f"`{args.catalog}`.`{args.schema}`"
-    if hasattr(args, "table"):
-        args.full_table = f"{namespace}.`{args.table}`"
-    if stage == "download":
-        spark.sql(f"CREATE SCHEMA IF NOT EXISTS {namespace}")
-        spark.sql(f"CREATE VOLUME IF NOT EXISTS {namespace}.`{args.volume}`")
-    root = Path(f"/Volumes/{args.catalog}/{args.schema}/{args.volume}/runs/{args.run_id}")
-    root.mkdir(parents=True, exist_ok=True)
-    handler(args, spark, root)
+    configure_logging(stage, args.run_id)
+    with operation("task", stage_name=stage):
+        from pyspark.sql import SparkSession
+        spark = SparkSession.builder.getOrCreate()
+        namespace = f"`{args.catalog}`.`{args.schema}`"
+        if hasattr(args, "table"):
+            args.full_table = f"{namespace}.`{args.table}`"
+        if stage == "download":
+            spark.sql(f"CREATE SCHEMA IF NOT EXISTS {namespace}")
+            spark.sql(f"CREATE VOLUME IF NOT EXISTS {namespace}.`{args.volume}`")
+        root = Path(f"/Volumes/{args.catalog}/{args.schema}/{args.volume}/runs/{args.run_id}")
+        root.mkdir(parents=True, exist_ok=True)
+        event("storage.ready", root=str(root), table=args.full_table, repo=args.repo)
+        handler(args, spark, root)

@@ -2,9 +2,11 @@
 import io
 import json
 import uuid
+import time
+from .observability import event, operation
 from pathlib import Path
 
-from common import read_json, write_json, run_task, checkpoint, record_completion
+from .common import read_json, write_json, run_task, checkpoint, record_completion
 
 def iter_games(stream):
     """Lichess dumps delimit games with an Event header; preserve multiline PGN."""
@@ -24,7 +26,8 @@ def iter_games(stream):
 def stage_games(stream, directory, target_bytes=64 * 1024 * 1024):
     """Write whole games as JSON lines so Spark can safely split input files."""
     directory.mkdir(parents=True, exist_ok=True)
-    count = size = index = 0
+    count = size = index = total_bytes = 0
+    started = last_log = time.monotonic()
     output = None
     try:
         for game in iter_games(stream):
@@ -38,11 +41,19 @@ def stage_games(stream, directory, target_bytes=64 * 1024 * 1024):
             output.write(payload)
             size += len(payload)
             count += 1
+            total_bytes += len(payload)
+            now = time.monotonic()
+            if now - last_log >= 30:
+                event("extract.progress", games=count, chunks=index, bytes=total_bytes,
+                      games_per_second=round(count / max(now - started, 0.001), 2))
+                last_log = now
     finally:
         if output:
             output.close()
     if not count:
         raise ValueError("Archive contains no games")
+    event("extract.summary", games=count, chunks=index, bytes=total_bytes,
+          elapsed_seconds=round(time.monotonic() - started, 2))
     return count
 
 
@@ -59,7 +70,7 @@ def extract_archives(args, spark, root):
         raw = Path(archive["raw_path"])
         # A failed attempt never publishes partial files to the next task.
         directory = root / "staged" / uuid.uuid4().hex
-        with raw.open("rb") as compressed:
+        with operation("archive.extract", variant=archive["variant"], month=archive["month"]), raw.open("rb") as compressed:
             with zstandard.ZstdDecompressor().stream_reader(compressed) as reader:
                 with io.TextIOWrapper(reader, encoding="utf-8") as stream:
                     count = stage_games(stream, directory)
