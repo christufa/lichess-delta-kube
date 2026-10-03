@@ -23,7 +23,7 @@ variables:
     default: PAUSED
 sync:
   include:
-  - src/*.py
+  - src/lichess_pipeline/*.py
   exclude:
   - .env
   - .env.*
@@ -32,6 +32,9 @@ sync:
   - .venv/**
   - src/**/__pycache__/**
   - src/**/*.pyc
+  - dist/**
+  - build/**
+  - src/*.egg-info/**
 targets:
   dev:
     default: true
@@ -40,7 +43,19 @@ targets:
       schema: lichess_dev
       hf_repo: christopher3/lichess-games-dev
       schedule_status: UNPAUSED
+    bundle:
+      deployment:
+        lock:
+          enabled: true
   prod:
     mode: production
     workspace:
       root_path: /Workspace/Shared/.bundle/${bundle.name}/${bundle.target}
+workspace:
+  artifact_path: /Volumes/${var.catalog}/${var.schema}/${var.volume}/artifacts/${bundle.name}/${bundle.target}/${workspace.current_user.short_name}
+artifacts:
+  pipeline:
+    type: whl
+    path: .
+    build: python -m build --wheel
+    dynamic_version: true

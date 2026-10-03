@@ -8,3 +8,6 @@ __pycache__/
 .databricks/
 .venv/
 .pytest_cache/
+dist/
+build/
+*.egg-info/

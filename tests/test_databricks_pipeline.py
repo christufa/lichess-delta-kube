@@ -9,11 +9,11 @@ import pytest
 from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-import common
-import download
-import extract
-import insert
-import upload
+from lichess_pipeline import common
+from lichess_pipeline import download
+from lichess_pipeline import extract
+from lichess_pipeline import insert
+from lichess_pipeline import upload
 
 
 def task_args(**overrides):
@@ -146,8 +146,9 @@ def test_bundle_task_dependencies_and_entrypoints():
     previous = None
     for task in tasks:
         assert task.get("depends_on", []) == ([{"task_key": previous}] if previous else [])
-        assert (repo / "resources" / task["spark_python_task"]["python_file"]).is_file()
-        params = task["spark_python_task"]["parameters"]
+        assert task["python_wheel_task"]["package_name"] == "lichess_pipeline"
+        assert task["python_wheel_task"]["entry_point"] == task["task_key"]
+        params = task["python_wheel_task"]["parameters"]
         assert params[params.index("--run-id") + 1] == "{{job.run_id}}"
         previous = task["task_key"]
 

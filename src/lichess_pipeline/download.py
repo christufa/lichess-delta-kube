@@ -3,7 +3,8 @@ from pathlib import Path
 
 import requests
 from bs4 import BeautifulSoup
-from tqdm.auto import tqdm
+import time
+from .observability import event, operation
 
 BASE_URL    = "https://database.lichess.org"
 
@@ -13,6 +14,7 @@ def fetch_links(
     year: int | None = None,
     month: int | None = None,
 ) -> list[tuple[str, str]]:
+    event("index.fetch", variant=variant, year=year, month=month)
     resp = requests.get(BASE_URL + "/", timeout=30)
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "html.parser")
@@ -32,6 +34,7 @@ def fetch_links(
             continue
         links.append((name, url))
 
+    event("index.found", archives=len(links))
     return links
 
 
@@ -44,15 +47,19 @@ def download_file(url: str, dest: Path, chunk: int = 1 << 20) -> None:
     if resume:
         headers["Range"] = f"bytes={resume}-"
 
+    event("download.started", archive=dest.name, resume_bytes=resume)
+    started = last_log = time.monotonic()
     with requests.get(url, stream=True, headers=headers, timeout=60) as r:
         if r.status_code == 416:
             expected = r.headers.get("Content-Range", "").removeprefix("bytes */")
             if expected.isdigit() and resume == int(expected):
                 tmp.replace(dest)
+                event("download.completed", archive=dest.name, bytes=resume, resumed_complete=True)
                 return
         r.raise_for_status()
         if resume and r.status_code == 200:
             # Server ignored Range: restart rather than append a full archive.
+            event("download.range_ignored", archive=dest.name)
             resume = 0
         if r.status_code == 206:
             if not r.headers.get("Content-Range", "").startswith(f"bytes {resume}-"):
@@ -60,34 +67,37 @@ def download_file(url: str, dest: Path, chunk: int = 1 << 20) -> None:
         total = int(r.headers.get("content-length", 0)) + resume
         mode  = "ab" if resume else "wb"
 
-        with open(tmp, mode) as f, tqdm(
-            desc=dest.name,
-            total=total,
-            initial=resume,
-            unit="B",
-            unit_scale=True,
-            unit_divisor=1024,
-            leave=False,
-        ) as bar:
+        downloaded = resume
+        with open(tmp, mode) as f:
             for data in r.iter_content(chunk):
                 f.write(data)
-                bar.update(len(data))
+                downloaded += len(data)
+                now = time.monotonic()
+                if now - last_log >= 30:
+                    elapsed = max(now - started, 0.001)
+                    event("download.progress", archive=dest.name, bytes=downloaded,
+                          total_bytes=total or None,
+                          bytes_per_second=round((downloaded - resume) / elapsed))
+                    last_log = now
 
         if r.headers.get("content-length") and tmp.stat().st_size != total:
             raise IOError("Incomplete archive download; partial file retained for retry")
 
     tmp.rename(dest)
+    event("download.completed", archive=dest.name, bytes=dest.stat().st_size,
+          elapsed_seconds=round(time.monotonic() - started, 2))
 
 
 def download_archives(args, spark, root):
     """Cache compressed archives and publish a manifest for extraction."""
     import re
-    from common import selected_period, write_json, checkpoint, record_completion
+    from .common import selected_period, write_json, checkpoint, record_completion
 
     year, month = selected_period(args.year, args.month)
     selected = {"variant": args.variant, "month": f"{year:04d}-{month:02d}"}
+    event("month.selected", **selected)
     if checkpoint(root, args, selected, "upload"):
-        print(f"Already complete: {selected['variant']}/{selected['month']}", flush=True)
+        event("month.skipped", **selected, reason="upload_checkpoint")
         write_json(root / "downloads.json", [])
         return
     # A new run can resume a previously committed Delta month without raw files.
@@ -111,7 +121,10 @@ def download_archives(args, spark, root):
             raise ValueError(f"Unexpected archive filename: {name}")
         raw = root.parent.parent / "raw" / name
         if not raw.exists():
-            download_file(url, raw)
+            with operation("archive.download", archive=name):
+                download_file(url, raw)
+        else:
+            event("download.cached", archive=name, bytes=raw.stat().st_size)
         archive = dict(variant=match[1], month=match[2], raw_path=str(raw), source_url=url)
         record_completion(root, args, archive, "download")
         archives.append(archive)
@@ -119,5 +132,5 @@ def download_archives(args, spark, root):
 
 
 if __name__ == "__main__":
-    from common import run_task
+    from .common import run_task
     run_task(download_archives, "download")

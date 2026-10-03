@@ -18,8 +18,10 @@ resources:
       - task_key: download
         max_retries: 2
         min_retry_interval_millis: 60000
-        spark_python_task:
-          python_file: ../src/download.py
+        environment_key: download
+        python_wheel_task:
+          package_name: lichess_pipeline
+          entry_point: download
           parameters:
           - --catalog
           - ${var.catalog}
@@ -41,14 +43,15 @@ resources:
           - ${var.table}
           - --repo
           - ${var.hf_repo}
-        environment_key: download
       - task_key: extract
         depends_on:
         - task_key: download
         max_retries: 2
         min_retry_interval_millis: 60000
-        spark_python_task:
-          python_file: ../src/extract.py
+        environment_key: extract
+        python_wheel_task:
+          package_name: lichess_pipeline
+          entry_point: extract
           parameters:
           - --catalog
           - ${var.catalog}
@@ -62,14 +65,15 @@ resources:
           - ${var.table}
           - --repo
           - ${var.hf_repo}
-        environment_key: extract
       - task_key: insert
         depends_on:
         - task_key: extract
         max_retries: 2
         min_retry_interval_millis: 60000
-        spark_python_task:
-          python_file: ../src/insert.py
+        environment_key: insert
+        python_wheel_task:
+          package_name: lichess_pipeline
+          entry_point: insert
           parameters:
           - --catalog
           - ${var.catalog}
@@ -83,14 +87,15 @@ resources:
           - ${var.table}
           - --repo
           - ${var.hf_repo}
-        environment_key: insert
       - task_key: upload
         depends_on:
         - task_key: insert
         max_retries: 2
         min_retry_interval_millis: 60000
-        spark_python_task:
-          python_file: ../src/upload.py
+        environment_key: upload
+        python_wheel_task:
+          package_name: lichess_pipeline
+          entry_point: upload
           parameters:
           - --catalog
           - ${var.catalog}
@@ -110,7 +115,6 @@ resources:
           - ${var.hf_secret_key}
           - --shard-size
           - '{{job.parameters.shard_size}}'
-        environment_key: upload
       environments:
       - environment_key: download
         spec:
@@ -118,22 +122,25 @@ resources:
           dependencies:
           - requests>=2.32,<3
           - beautifulsoup4>=4.12,<5
-          - tqdm>=4.66,<5
+          - ../dist/*.whl
       - environment_key: extract
         spec:
           environment_version: '4'
           dependencies:
           - zstandard>=0.23,<1
+          - ../dist/*.whl
       - environment_key: insert
         spec:
           environment_version: '4'
           dependencies:
           - chess==1.10.0
+          - ../dist/*.whl
       - environment_key: upload
         spec:
           environment_version: '4'
           dependencies:
           - huggingface_hub==0.36.0
+          - ../dist/*.whl
       schedule:
         quartz_cron_expression: 0 0 6 5 * ?
         timezone_id: America/New_York
