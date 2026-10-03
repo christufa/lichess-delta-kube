@@ -1,9 +1,0 @@
-data/
-.git/
-.github/
-__pycache__/
-*.pyc
-*.pgn
-*.pgn.zst
-.env
-docker-compose.yml
