@@ -74,26 +74,30 @@ def sample_table():
                      "White": ["Alíce", "Bob"], "WhiteElo": pa.array([1500, None], type=pa.int16())})
 
 
-def test_prepare_preserves_values_and_nulls_and_reuses_cache(tmp_path):
-    source, dest = tmp_path / "source.parquet", tmp_path / "prepared.parquet"
+def test_footer_schema_preserves_source_and_maps_time(tmp_path):
+    source = tmp_path / "source.parquet"
     table = sample_table()
     pq.write_table(table, source)
-    assert download.prepare_parquet(source, dest) == 2
-    result = pq.read_table(dest)
-    assert result["UTCTime"].to_pylist() == ["12:34:56.123", None]
-    for name in ("Site", "UTCDate", "movetext", "White", "WhiteElo"):
-        assert result[name] == table[name]
-    source.unlink()
-    assert download.prepare_parquet(source, dest) == 2
+    metadata = download.inspect_parquet(source)
+    assert metadata["games"] == 2
+    types = {f["name"]: f["type"] for f in metadata["read_schema"]["fields"]}
+    assert types["UTCTime"] == "integer"
+    assert types["WhiteElo"] == "short"
+    assert types["UTCDate"] == "date"
+    assert metadata["time_columns"] == ["UTCTime"]
+    assert pq.read_table(source).equals(table)
+    assert list(tmp_path.iterdir()) == [source]
 
 
-def test_failed_prepare_does_not_publish_completion(tmp_path):
-    source, dest = tmp_path / "bad.parquet", tmp_path / "prepared.parquet"
+def test_invalid_schema_fails_before_delta(tmp_path):
+    source = tmp_path / "bad.parquet"
     pq.write_table(pa.table({"wrong": [1]}), source)
     with pytest.raises(ValueError, match="Missing HF"):
-        download.prepare_parquet(source, dest)
-    assert not dest.exists()
-    assert not dest.with_suffix(".json").exists()
+        download.inspect_parquet(source)
+    table = sample_table().append_column("unsupported", pa.array([[1], [2]]))
+    pq.write_table(table, source)
+    with pytest.raises(ValueError, match="Unsupported HF"):
+        download.inspect_parquet(source)
 
 
 def test_stage_uses_pinned_public_source_and_all_files(tmp_path, monkeypatch):
@@ -111,6 +115,9 @@ def test_stage_uses_pinned_public_source_and_all_files(tmp_path, monkeypatch):
                    "size": source.stat().st_size} for i in range(2)]
     staged = download.stage_month(a, args(), tmp_path / "runs" / "1")
     assert len(calls) == 2 and len(staged["paths"]) == 2 and staged["games"] == 4
+    assert staged["paths"] == [str(source), str(source)]
+    assert staged["time_columns"] == ["UTCTime"]
+    assert not list(tmp_path.rglob("prepared"))
 
 
 def test_checkpoint_ignores_old_pipeline_and_changed_source(tmp_path):
@@ -162,6 +169,7 @@ def test_limit_applies_to_pending_months(tmp_path, monkeypatch):
 @pytest.mark.parametrize("actual", [2, 1])
 def test_delta_partition_replacement_and_count_verification(monkeypatch, actual):
     calls = []
+    monkeypatch.setattr(insert, "read_source", lambda a, spark: spark.parquet(*a["paths"]))
     class Spark:
         @property
         def read(self): return self
@@ -208,3 +216,35 @@ def test_bundle_and_entrypoint():
     assert [t["task_key"] for t in job["tasks"]] == ["sync"]
     assert job["tasks"][0]["python_wheel_task"]["entry_point"] == "sync"
     assert tomllib.loads((repo / "pyproject.toml").read_text())["project"]["scripts"] == {"sync": "lichess_pipeline.cli:sync"}
+
+
+def test_direct_reader_passes_schema_and_time_expression(monkeypatch):
+    calls = []
+    class Reader:
+        @property
+        def read(self): return self
+        def schema(self, schema): calls.append(("schema", schema)); return self
+        def parquet(self, *paths): calls.append(("paths", paths)); return self
+        def withColumn(self, name, expr): calls.append((name, expr)); return self
+    monkeypatch.setitem(sys.modules, "pyspark", SimpleNamespace())
+    monkeypatch.setitem(sys.modules, "pyspark.sql", SimpleNamespace(functions=SimpleNamespace(expr=lambda x: x)))
+    monkeypatch.setitem(sys.modules, "pyspark.sql.types", SimpleNamespace(StructType=SimpleNamespace(fromJson=lambda x: x)))
+    spec = {"read_schema": {"type": "struct", "fields": []},
+            "paths": ["raw-a.parquet", "raw-b.parquet"], "time_columns": ["UTCTime"]}
+    insert.read_source(spec, Reader())
+    assert ("schema", spec["read_schema"]) in calls
+    assert ("paths", tuple(spec["paths"])) in calls
+    expression = dict(calls)["UTCTime"]
+    assert "IS NULL THEN CAST(NULL AS STRING)" in expression
+    assert "%02d:%02d:%02d.%03d" in expression
+    assert "pmod(`UTCTime`, 1000)" in expression
+
+
+def test_completed_rewrite_checkpoint_is_still_reused(tmp_path, monkeypatch):
+    root = tmp_path / "runs" / "new"
+    a = {**archive(), "games": 2, "version": 9, "paths": ["old/prepared/file.parquet"]}
+    common.record_completion(tmp_path / "runs" / "old", args(), a, "insert")
+    monkeypatch.setattr(sync, "discover_months", lambda *a: [archive()])
+    monkeypatch.setattr(sync, "stage_month", lambda *a: pytest.fail("Must not reload completed month"))
+    sync.sync_dataset(args(), None, root)
+    assert common.read_json(root / "delta.json") == []

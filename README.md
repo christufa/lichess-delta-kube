@@ -4,11 +4,11 @@ Incrementally import the official [Lichess Standard Chess Games dataset](https:/
 from Hugging Face into a Unity Catalog Delta table on Databricks.
 
 ```text
-HF monthly Parquet shards -> volume cache -> columnar time conversion -> Delta
+HF monthly Parquet shards -> volume cache -> Spark direct read + time formatting -> Delta
 ```
 
 The serverless job has one installed wheel task, `sync`. It discovers published
-months, downloads shards concurrently, and commits each month before starting
+months, downloads shards concurrently, reads their footers, and commits each month before starting
 the next. There is no PGN download/extraction, chess move parsing, or HF upload.
 The source is public and CC0; no HF token or secret scope is required.
 
@@ -29,8 +29,10 @@ in the run plan and completion checkpoints.
 
 This schema does not contain the previous pipeline's derived per-move FENs,
 UCI moves, parsed clock/evaluation JSON, or reconstructed PGN column. The original
-clock/evaluation comments remain in `movetext` where present. Normalization uses
-bounded Arrow batches of 8,192 rows and never interprets chess moves.
+clock/evaluation comments remain in `movetext` where present. Spark reads TIME_MILLIS as its physical INT32 value using an explicit schema,
+then formats the time inside the Delta write. No intermediate Parquet rewrite
+is performed. Schema and row counts come from shard footers; unsupported or
+inconsistent shard schemas fail before insertion. Chess moves are never interpreted.
 
 The default destination is **`brikt.lichess_dev.games_hf`** in dev and
 **`brikt.lichess.games_hf`** in prod. Existing `games` tables and old PGN checkpoints
@@ -43,7 +45,7 @@ this importer at the old enriched table without an explicit schema migration.
 | --- | --- | --- |
 | `year`, `month` | `0`, `0` | Sync all published months missing or changed locally |
 | `limit` | `0` | Maximum pending months per run; 0 means all |
-| `workers` | `4` | Concurrent shard download/preparation workers, 1-16 |
+| `workers` | `4` | Concurrent shard download workers, 1-16 |
 
 Set both year and month for an explicit month. Missing explicit months fail
 clearly; there is no PGN fallback. Months run oldest first. `limit` counts pending
@@ -136,14 +138,14 @@ changed month files trigger partition replacement. New runs discover fresh sourc
 state; repairs keep the original plan. Changing selection parameters requires a
 new run. Removed upstream months are not automatically deleted from Delta.
 
-Downloaded files are cached under `hf/<fingerprint>/raw/` and Spark-compatible
-Parquet under `hf/<fingerprint>/prepared/`, relative to the volume root. The HF
-client resumes interrupted downloads. Completed prepared shards have row-count
-and size markers and can be reused on retry. Partial prepared files are excluded
-from Spark reads. Source and prepared caches are retained, so budget for both
-copies plus the Delta table; cleanup is a separate operation.
+Downloaded files are cached under `hf/<fingerprint>/raw/`, relative to the volume
+root. The HF client resumes interrupted downloads. No new `prepared/` copy is
+created. Existing raw caches and completed month checkpoints from version 0.3.0
+are reused because the resulting Delta schema and values are unchanged. Old
+prepared files are left intact; cleanup is a separate operation. Budget for raw
+cache plus Delta storage.
 
-For each month, Spark loads explicit prepared file paths and replaces only the
+For each month, Spark loads explicit original Parquet file paths and replaces only the
 matching `variant`/`archive_month` partition. The committed Delta snapshot row
 count is checked against source Parquet metadata. Only then is an `insert.json`
 checkpoint written under `history/<source-format-table-hash>/standard/YYYY-MM/`.
@@ -154,18 +156,19 @@ Checkpoint reuse assumes the table has not been manually deleted or changed.
 
 ## Progress and diagnostics
 
-`tqdm` displays month progress, per-month file progress, row preparation progress,
+`tqdm` displays month progress, per-month file progress,
 and the HF client's download progress. Structured JSON stdout logs remain useful
 when Databricks renders terminal progress bars poorly:
 
 - `source.discovered`: pinned revision, available month range, file count and bytes.
 - `sync.selection` / `sync.plan`: number of selected pending months.
 - `download.progress`: completed files/bytes versus totals, row count and effective
-  staging bytes/sec (includes preparation and cache hits, not pure network speed).
-- `parquet.prepare.progress`: rows/total rows and rows/sec approximately every 30s.
+  staging bytes/sec (includes cache hits and footer checks, not pure network speed).
+- `download.summary`: download/footer duration and confirmation that no bytes were rewritten.
 - `delta.write`, `delta.verify`, `month.download`, `source.discover`, `task`:
   start/completion/failure plus a heartbeat every 60 seconds while pending.
-- `sync.progress` / `sync.summary`: completed months and rows.
+- `sync.progress`: completed months, rows, and byte-weighted progress through the selected plan.
+- `sync.summary`: completed months and rows.
 
 Heartbeats indicate liveness, not a fabricated Spark percentage or ETA. Logs have
 UTC timestamps and run IDs and redact token patterns and URL query strings.
@@ -178,6 +181,19 @@ python -m build --wheel
 ```
 
 Tests cover revision pinning, complete shard discovery, changed-source detection,
-Arrow value/null preservation, checkpoint isolation, retry behavior, partition
+footer schema validation, checkpoint isolation, retry behavior, partition
 replacement and verification failures. Local tests mock Spark; a deployed smoke
 run is required to verify actual Databricks permissions and Delta integration.
+
+
+### Direct-read benchmark
+
+An isolated Databricks serverless test on a 210 MB, 534,390-row May 2015 shard
+compared rewrite-plus-Delta against direct reading with an explicit schema.
+The initial implementation measured 58.4 vs 13.0 seconds on the first round and
+37.8 vs 6.7 seconds on a warm round. Full-row multiset equality passed both times.
+These measurements exclude HF downloads and do not predict full-backfill speedup.
+The reproducible harness is `scripts/hf_ingest_smoke.py`; it uses the production
+reader, an independent rewrite baseline, and separate `hf_smoke_*` tables.
+Deploying while an old run is active remains blocked; its running wheel cannot
+be hot-swapped. A subsequent run reuses completed monthly checkpoints.
