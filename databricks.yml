@@ -11,13 +11,7 @@ variables:
   volume:
     default: staging
   table:
-    default: games
-  hf_repo:
-    default: christopher3/lichess-games
-  hf_secret_scope:
-    default: lichess
-  hf_secret_key:
-    default: hf-token
+    default: games_hf
   schedule_status:
     description: Whether the monthly schedule is active
     default: PAUSED
@@ -41,7 +35,6 @@ targets:
     mode: development
     variables:
       schema: lichess_dev
-      hf_repo: christopher3/lichess-games-dev
       schedule_status: UNPAUSED
     bundle:
       deployment:

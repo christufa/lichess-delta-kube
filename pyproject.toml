@@ -4,15 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lichess-pipeline"
-version = "0.2.0"
-description = "Monthly Lichess ingestion into Delta and Hugging Face"
+version = "0.3.0"
+description = "Lichess Hugging Face Parquet ingestion into Delta"
 requires-python = ">=3.11"
 
 [project.scripts]
-download = "lichess_pipeline.cli:download"
-extract = "lichess_pipeline.cli:extract"
-insert = "lichess_pipeline.cli:insert"
-upload = "lichess_pipeline.cli:upload"
+sync = "lichess_pipeline.cli:sync"
 
 [tool.setuptools.packages.find]
 where = ["src"]

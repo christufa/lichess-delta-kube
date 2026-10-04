@@ -1,27 +1,25 @@
 resources:
   jobs:
     lichess_pipeline:
-      name: lichess-delta-hf-${bundle.target}
+      name: lichess-hf-delta-${bundle.target}
       max_concurrent_runs: 1
       parameters:
-      - name: variant
-        default: standard
       - name: year
         default: '0'
       - name: month
         default: '0'
       - name: limit
-        default: '1'
-      - name: shard_size
-        default: '200000'
+        default: '0'
+      - name: workers
+        default: '4'
       tasks:
-      - task_key: download
+      - task_key: sync
         max_retries: 2
         min_retry_interval_millis: 60000
-        environment_key: download
+        environment_key: sync
         python_wheel_task:
           package_name: lichess_pipeline
-          entry_point: download
+          entry_point: sync
           parameters:
           - --catalog
           - ${var.catalog}
@@ -31,115 +29,23 @@ resources:
           - ${var.volume}
           - --run-id
           - '{{job.run_id}}'
-          - --variant
-          - '{{job.parameters.variant}}'
           - --year
           - '{{job.parameters.year}}'
           - --month
           - '{{job.parameters.month}}'
           - --limit
           - '{{job.parameters.limit}}'
+          - --workers
+          - '{{job.parameters.workers}}'
           - --table
           - ${var.table}
-          - --repo
-          - ${var.hf_repo}
-      - task_key: extract
-        depends_on:
-        - task_key: download
-        max_retries: 2
-        min_retry_interval_millis: 60000
-        environment_key: extract
-        python_wheel_task:
-          package_name: lichess_pipeline
-          entry_point: extract
-          parameters:
-          - --catalog
-          - ${var.catalog}
-          - --schema
-          - ${var.schema}
-          - --volume
-          - ${var.volume}
-          - --run-id
-          - '{{job.run_id}}'
-          - --table
-          - ${var.table}
-          - --repo
-          - ${var.hf_repo}
-      - task_key: insert
-        depends_on:
-        - task_key: extract
-        max_retries: 2
-        min_retry_interval_millis: 60000
-        environment_key: insert
-        python_wheel_task:
-          package_name: lichess_pipeline
-          entry_point: insert
-          parameters:
-          - --catalog
-          - ${var.catalog}
-          - --schema
-          - ${var.schema}
-          - --volume
-          - ${var.volume}
-          - --run-id
-          - '{{job.run_id}}'
-          - --table
-          - ${var.table}
-          - --repo
-          - ${var.hf_repo}
-      - task_key: upload
-        depends_on:
-        - task_key: insert
-        max_retries: 2
-        min_retry_interval_millis: 60000
-        environment_key: upload
-        python_wheel_task:
-          package_name: lichess_pipeline
-          entry_point: upload
-          parameters:
-          - --catalog
-          - ${var.catalog}
-          - --schema
-          - ${var.schema}
-          - --volume
-          - ${var.volume}
-          - --run-id
-          - '{{job.run_id}}'
-          - --table
-          - ${var.table}
-          - --repo
-          - ${var.hf_repo}
-          - --secret-scope
-          - ${var.hf_secret_scope}
-          - --secret-key
-          - ${var.hf_secret_key}
-          - --shard-size
-          - '{{job.parameters.shard_size}}'
       environments:
-      - environment_key: download
+      - environment_key: sync
         spec:
           environment_version: '4'
           dependencies:
-          - requests>=2.32,<3
-          - beautifulsoup4>=4.12,<5
-          - ../dist/*.whl
-      - environment_key: extract
-        spec:
-          environment_version: '4'
-          dependencies:
-          - zstandard>=0.23,<1
-          - ../dist/*.whl
-      - environment_key: insert
-        spec:
-          environment_version: '4'
-          dependencies:
-          - chess==1.10.0
-          - ../dist/*.whl
-      - environment_key: upload
-        spec:
-          environment_version: '4'
-          dependencies:
-          - huggingface_hub==0.36.0
+          - huggingface_hub[hf_xet]==0.36.0
+          - tqdm>=4.66,<5
           - ../dist/*.whl
       schedule:
         quartz_cron_expression: 0 0 6 5 * ?
