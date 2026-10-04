@@ -1,9 +1,7 @@
-# Local tests only; Databricks runtime dependencies live in resources/lichess_job.yml.
+# Spark and Delta integration must also be verified in Databricks.
 pytest>=8,<10
-pandas>=2.2,<3
-chess==1.10.0
-requests>=2.32,<3
-beautifulsoup4>=4.12,<5
-zstandard>=0.23,<1
+pyarrow>=18,<22
+huggingface_hub[hf_xet]==0.36.0
+tqdm>=4.66,<5
 PyYAML>=6,<7
 build>=1.2,<2

@@ -1,136 +1,151 @@
-"""Lichess archive discovery and resumable downloads."""
-from pathlib import Path
-
-import requests
-from bs4 import BeautifulSoup
+"""Discover immutable HF snapshots and stage Parquet without PGN parsing."""
+import hashlib
+import json
+import re
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+from queue import Queue
+
+from huggingface_hub import HfApi, hf_hub_download
+from huggingface_hub.hf_api import RepoFile
+from tqdm.auto import tqdm
+
+from .common import SOURCE_REPO, read_json, write_json
 from .observability import event, operation
 
-BASE_URL    = "https://database.lichess.org"
+FILE_PATTERN = re.compile(r"data/year=(\d{4})/month=(\d{2})/train-(\d+)-of-(\d+)\.parquet")
 
 
-def fetch_links(
-    variant: str | None = None,
-    year: int | None = None,
-    month: int | None = None,
-) -> list[tuple[str, str]]:
-    event("index.fetch", variant=variant, year=year, month=month)
-    resp = requests.get(BASE_URL + "/", timeout=30)
-    resp.raise_for_status()
-    soup = BeautifulSoup(resp.text, "html.parser")
-
-    links: list[tuple[str, str]] = []
-    for a in soup.find_all("a", href=True):
-        href: str = a["href"]
-        if not href.endswith(".pgn.zst"):
+def discover_months(year=0, month=0):
+    api = HfApi(token=False)
+    revision = api.dataset_info(SOURCE_REPO).sha
+    groups = {}
+    for item in api.list_repo_tree(SOURCE_REPO, repo_type="dataset", revision=revision,
+                                   path_in_repo="data", recursive=True):
+        if not isinstance(item, RepoFile):
             continue
-        url = href if href.startswith("http") else f"{BASE_URL}/{href.lstrip('/')}"
-        name = url.split("/")[-1]
-        if variant and f"_{variant}_" not in name:
+        match = FILE_PATTERN.fullmatch(item.path)
+        if not match:
+            if item.path.endswith(".parquet"):
+                raise ValueError(f"Unexpected source Parquet path: {item.path}")
             continue
-        if year and f"_{year}-" not in name:
+        y, m, index, total = map(int, match.groups())
+        if y < 2013 or not 1 <= m <= 12:
+            raise ValueError(f"Invalid source partition: {item.path}")
+        if year and (y, m) != (year, month):
             continue
-        if month and f"-{month:02d}." not in name:
-            continue
-        links.append((name, url))
+        groups.setdefault(f"{y:04d}-{m:02d}", []).append({
+            "path": item.path, "size": item.size,
+            "oid": item.lfs.sha256 if item.lfs else item.blob_id,
+            "index": index, "total": total})
+    if not groups:
+        raise ValueError("No published HF Parquet files match the requested month")
+    archives = []
+    for period, files in sorted(groups.items()):
+        files.sort(key=lambda item: item["path"])
+        total = files[0]["total"]
+        if (any(f["total"] != total for f in files)
+                or len(files) != total or {f["index"] for f in files} != set(range(total))):
+            raise ValueError(f"Incomplete HF shard set for {period}; retry after publication finishes")
+        fingerprint = hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest()
+        archives.append({"variant": "standard", "month": period, "revision": revision,
+                         "fingerprint": fingerprint, "files": files})
+    event("source.discovered", source_repo=SOURCE_REPO, revision=revision,
+          months=len(archives), first_month=archives[0]["month"], last_month=archives[-1]["month"],
+          files=sum(len(a["files"]) for a in archives),
+          bytes=sum(f["size"] for a in archives for f in a["files"]))
+    return archives
 
-    event("index.found", archives=len(links))
-    return links
 
+def prepare_parquet(source, destination, progress_position=1):
+    """Stream columnar batches; convert Arrow time types unsupported by older Spark."""
+    import pyarrow as pa
+    import pyarrow.parquet as pq
 
-def download_file(url: str, dest: Path, chunk: int = 1 << 20) -> None:
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    tmp = dest.with_suffix(dest.suffix + ".part")
-
-    headers: dict[str, str] = {}
-    resume = tmp.stat().st_size if tmp.exists() else 0
-    if resume:
-        headers["Range"] = f"bytes={resume}-"
-
-    event("download.started", archive=dest.name, resume_bytes=resume)
+    destination = Path(destination)
+    marker = destination.with_suffix(".json")
+    if destination.exists() and marker.exists():
+        saved = read_json(marker)
+        if destination.stat().st_size == saved["bytes"]:
+            with pq.ParquetFile(destination) as cached:
+                if cached.metadata.num_rows == saved["games"]:
+                    return saved["games"]
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_suffix(".partial")
     started = last_log = time.monotonic()
-    with requests.get(url, stream=True, headers=headers, timeout=60) as r:
-        if r.status_code == 416:
-            expected = r.headers.get("Content-Range", "").removeprefix("bytes */")
-            if expected.isdigit() and resume == int(expected):
-                tmp.replace(dest)
-                event("download.completed", archive=dest.name, bytes=resume, resumed_complete=True)
-                return
-        r.raise_for_status()
-        if resume and r.status_code == 200:
-            # Server ignored Range: restart rather than append a full archive.
-            event("download.range_ignored", archive=dest.name)
-            resume = 0
-        if r.status_code == 206:
-            if not r.headers.get("Content-Range", "").startswith(f"bytes {resume}-"):
-                raise ValueError("Server returned an unexpected download range")
-        total = int(r.headers.get("content-length", 0)) + resume
-        mode  = "ab" if resume else "wb"
-
-        downloaded = resume
-        with open(tmp, mode) as f:
-            for data in r.iter_content(chunk):
-                f.write(data)
-                downloaded += len(data)
+    rows = 0
+    with pq.ParquetFile(source) as parquet:
+        schema = parquet.schema_arrow.remove_metadata()
+        required = {"Site", "UTCDate", "UTCTime", "movetext"}
+        if not required.issubset(schema.names):
+            raise ValueError(f"Missing HF fields: {sorted(required - set(schema.names))}")
+        if {"variant", "archive_month"}.intersection(schema.names):
+            raise ValueError("HF fields conflict with pipeline partition columns")
+        schema = pa.schema([pa.field(f.name, pa.string() if pa.types.is_time(f.type) else f.type,
+                                     nullable=f.nullable) for f in schema])
+        with pq.ParquetWriter(temporary, schema, compression="zstd") as writer, tqdm(
+                total=parquet.metadata.num_rows, desc=f"Prepare {destination.name}", unit="rows",
+                position=progress_position, leave=False, mininterval=5) as progress:
+            for batch in parquet.iter_batches(batch_size=8192):
+                table = pa.Table.from_batches([batch]).cast(schema)
+                writer.write_table(table)
+                rows += batch.num_rows
+                progress.update(batch.num_rows)
                 now = time.monotonic()
                 if now - last_log >= 30:
-                    elapsed = max(now - started, 0.001)
-                    event("download.progress", archive=dest.name, bytes=downloaded,
-                          total_bytes=total or None,
-                          bytes_per_second=round((downloaded - resume) / elapsed))
+                    event("parquet.prepare.progress", file=destination.name, games=rows,
+                          total_games=parquet.metadata.num_rows,
+                          games_per_second=round(rows / max(now - started, 0.001), 2))
                     last_log = now
-
-        if r.headers.get("content-length") and tmp.stat().st_size != total:
-            raise IOError("Incomplete archive download; partial file retained for retry")
-
-    tmp.rename(dest)
-    event("download.completed", archive=dest.name, bytes=dest.stat().st_size,
-          elapsed_seconds=round(time.monotonic() - started, 2))
+        if rows != parquet.metadata.num_rows or not rows:
+            raise ValueError("Prepared Parquet row count mismatch or empty shard")
+    temporary.replace(destination)
+    write_json(marker, {"games": rows, "bytes": destination.stat().st_size})
+    return rows
 
 
-def download_archives(args, spark, root):
-    """Cache compressed archives and publish a manifest for extraction."""
-    import re
-    from .common import selected_period, write_json, checkpoint, record_completion
+def stage_month(archive, args, root):
+    cache = root.parent.parent / "hf" / archive["fingerprint"]
+    output = cache / "prepared"
+    started = time.monotonic()
+    positions = Queue()
+    for position in range(2, args.workers + 2):
+        positions.put(position)
 
-    year, month = selected_period(args.year, args.month)
-    selected = {"variant": args.variant, "month": f"{year:04d}-{month:02d}"}
-    event("month.selected", **selected)
-    if checkpoint(root, args, selected, "upload"):
-        event("month.skipped", **selected, reason="upload_checkpoint")
-        write_json(root / "downloads.json", [])
-        return
-    # A new run can resume a previously committed Delta month without raw files.
-    saved = checkpoint(root, args, selected, "insert")
-    if saved:
-        write_json(root / "downloads.json", [saved])
-        return
-    saved = checkpoint(root, args, selected, "extract")
-    if saved:
-        write_json(root / "downloads.json", [saved])
-        return
-    links = sorted(set(fetch_links(args.variant, year, month)))
-    if not links:
-        raise ValueError("No matching archives found")
-    if args.limit:
-        links = links[:args.limit]
-    archives = []
-    for name, url in links:
-        match = re.fullmatch(r"lichess_db_(\w+)_rated_(\d{4}-\d{2})\.pgn\.zst", name)
-        if not match:
-            raise ValueError(f"Unexpected archive filename: {name}")
-        raw = root.parent.parent / "raw" / name
-        if not raw.exists():
-            with operation("archive.download", archive=name):
-                download_file(url, raw)
-        else:
-            event("download.cached", archive=name, bytes=raw.stat().st_size)
-        archive = dict(variant=match[1], month=match[2], raw_path=str(raw), source_url=url)
-        record_completion(root, args, archive, "download")
-        archives.append(archive)
-    write_json(root / "downloads.json", archives)
+    def stage_file(item):
+        source = hf_hub_download(SOURCE_REPO, item["path"], repo_type="dataset",
+                                 revision=archive["revision"], local_dir=str(cache / "raw"), token=False)
+        if Path(source).stat().st_size != item["size"]:
+            raise ValueError(f"Downloaded size mismatch: {item['path']}")
+        target = output / Path(item["path"]).name
+        position = positions.get()
+        try:
+            count = prepare_parquet(source, target, progress_position=position)
+        finally:
+            positions.put(position)
+        return str(target), count, item["size"]
 
-
-if __name__ == "__main__":
-    from .common import run_task
-    run_task(download_archives, "download")
+    paths, games, completed_bytes = [], 0, 0
+    total_bytes = sum(f["size"] for f in archive["files"])
+    with operation("month.download", month=archive["month"], files=len(archive["files"]),
+                   total_bytes=total_bytes), ThreadPoolExecutor(max_workers=args.workers) as pool:
+        futures = [pool.submit(stage_file, item) for item in archive["files"]]
+        with tqdm(total=len(futures), desc=f"Files {archive['month']}", unit="file",
+                  position=1, mininterval=5) as progress:
+            for future in as_completed(futures):
+                try:
+                    path, count, size = future.result()
+                except Exception:
+                    for pending in futures:
+                        pending.cancel()
+                    raise
+                paths.append(path)
+                games += count
+                completed_bytes += size
+                progress.update(1)
+                elapsed = max(time.monotonic() - started, 0.001)
+                event("download.progress", month=archive["month"], files=len(paths),
+                      total_files=len(futures), bytes=completed_bytes, total_bytes=total_bytes,
+                      games=games, bytes_per_second=round(completed_bytes / elapsed))
+    return {**archive, "paths": sorted(paths), "games": games}
