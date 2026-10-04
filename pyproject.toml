@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lichess-pipeline"
-version = "0.3.0"
+version = "0.3.1"
 description = "Lichess Hugging Face Parquet ingestion into Delta"
 requires-python = ">=3.11"
 

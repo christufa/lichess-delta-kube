@@ -26,7 +26,9 @@ def sync_dataset(args, spark, root):
             archives = archives[:args.limit]
         write_json(plan_path, {"selection": selection, "archives": archives})
         event("sync.selection", published_months=len(discovered), pending_months=len(archives))
-    event("sync.plan", months=len(archives), source_repo=SOURCE_REPO)
+    total_bytes = sum(f["size"] for a in archives for f in a["files"])
+    completed_bytes = 0
+    event("sync.plan", months=len(archives), source_repo=SOURCE_REPO, total_bytes=total_bytes)
     results = []
     started = time.monotonic()
     with tqdm(total=len(archives), desc="HF months", unit="month", position=0,
@@ -38,9 +40,12 @@ def sync_dataset(args, spark, root):
                 saved = ingest_month(staged, args, spark)
                 record_completion(root, args, saved, "insert")
             results.append(saved)
+            completed_bytes += sum(f["size"] for f in archive["files"])
             write_json(root / "delta.json", results)
             progress.update(1)
             event("sync.progress", completed_months=len(results), total_months=len(archives),
+                  completed_source_bytes=completed_bytes, total_source_bytes=total_bytes,
+                  source_bytes_percent=round(100 * completed_bytes / total_bytes, 3) if total_bytes else 100,
                   games=sum(a["games"] for a in results), elapsed_seconds=round(time.monotonic() - started, 2))
     write_json(root / "delta.json", results)
     event("sync.summary", months=len(results), games=sum(a["games"] for a in results))

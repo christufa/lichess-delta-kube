@@ -5,13 +5,12 @@ import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from queue import Queue
 
 from huggingface_hub import HfApi, hf_hub_download
 from huggingface_hub.hf_api import RepoFile
 from tqdm.auto import tqdm
 
-from .common import SOURCE_REPO, read_json, write_json
+from .common import SOURCE_REPO
 from .observability import event, operation
 
 FILE_PATTERN = re.compile(r"data/year=(\d{4})/month=(\d{2})/train-(\d+)-of-(\d+)\.parquet")
@@ -58,75 +57,55 @@ def discover_months(year=0, month=0):
     return archives
 
 
-def prepare_parquet(source, destination, progress_position=1):
-    """Stream columnar batches; convert Arrow time types unsupported by older Spark."""
+def inspect_parquet(source):
+    """Read only the footer to obtain row counts and an explicit Spark schema."""
     import pyarrow as pa
     import pyarrow.parquet as pq
 
-    destination = Path(destination)
-    marker = destination.with_suffix(".json")
-    if destination.exists() and marker.exists():
-        saved = read_json(marker)
-        if destination.stat().st_size == saved["bytes"]:
-            with pq.ParquetFile(destination) as cached:
-                if cached.metadata.num_rows == saved["games"]:
-                    return saved["games"]
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    temporary = destination.with_suffix(".partial")
-    started = last_log = time.monotonic()
-    rows = 0
     with pq.ParquetFile(source) as parquet:
-        schema = parquet.schema_arrow.remove_metadata()
+        schema = parquet.schema_arrow
         required = {"Site", "UTCDate", "UTCTime", "movetext"}
         if not required.issubset(schema.names):
             raise ValueError(f"Missing HF fields: {sorted(required - set(schema.names))}")
         if {"variant", "archive_month"}.intersection(schema.names):
             raise ValueError("HF fields conflict with pipeline partition columns")
-        schema = pa.schema([pa.field(f.name, pa.string() if pa.types.is_time(f.type) else f.type,
-                                     nullable=f.nullable) for f in schema])
-        with pq.ParquetWriter(temporary, schema, compression="zstd") as writer, tqdm(
-                total=parquet.metadata.num_rows, desc=f"Prepare {destination.name}", unit="rows",
-                position=progress_position, leave=False, mininterval=5) as progress:
-            for batch in parquet.iter_batches(batch_size=8192):
-                table = pa.Table.from_batches([batch]).cast(schema)
-                writer.write_table(table)
-                rows += batch.num_rows
-                progress.update(batch.num_rows)
-                now = time.monotonic()
-                if now - last_log >= 30:
-                    event("parquet.prepare.progress", file=destination.name, games=rows,
-                          total_games=parquet.metadata.num_rows,
-                          games_per_second=round(rows / max(now - started, 0.001), 2))
-                    last_log = now
-        if rows != parquet.metadata.num_rows or not rows:
-            raise ValueError("Prepared Parquet row count mismatch or empty shard")
-    temporary.replace(destination)
-    write_json(marker, {"games": rows, "bytes": destination.stat().st_size})
-    return rows
+        mapping = {pa.string(): "string", pa.large_string(): "string",
+                   pa.int8(): "byte", pa.int16(): "short", pa.int32(): "integer",
+                   pa.int64(): "long", pa.float32(): "float", pa.float64(): "double",
+                   pa.bool_(): "boolean", pa.date32(): "date", pa.binary(): "binary"}
+        fields, time_columns = [], []
+        for field in schema:
+            if field.type == pa.time32("ms"):
+                # TIME_MILLIS is physically INT32; bypass unsupported inference.
+                spark_type = "integer"
+                time_columns.append(field.name)
+            else:
+                spark_type = mapping.get(field.type)
+                if spark_type is None:
+                    raise ValueError(f"Unsupported HF field type: {field.name}: {field.type}")
+            fields.append({"name": field.name, "type": spark_type,
+                           "nullable": field.nullable, "metadata": {}})
+        if not parquet.metadata.num_rows:
+            raise ValueError("Empty HF Parquet shard")
+        return {"games": parquet.metadata.num_rows,
+                "read_schema": {"type": "struct", "fields": fields},
+                "time_columns": time_columns}
 
 
 def stage_month(archive, args, root):
     cache = root.parent.parent / "hf" / archive["fingerprint"]
-    output = cache / "prepared"
     started = time.monotonic()
-    positions = Queue()
-    for position in range(2, args.workers + 2):
-        positions.put(position)
-
     def stage_file(item):
         source = hf_hub_download(SOURCE_REPO, item["path"], repo_type="dataset",
                                  revision=archive["revision"], local_dir=str(cache / "raw"), token=False)
         if Path(source).stat().st_size != item["size"]:
             raise ValueError(f"Downloaded size mismatch: {item['path']}")
-        target = output / Path(item["path"]).name
-        position = positions.get()
-        try:
-            count = prepare_parquet(source, target, progress_position=position)
-        finally:
-            positions.put(position)
-        return str(target), count, item["size"]
+        metadata = inspect_parquet(source)
+        return str(source), metadata, item["size"]
 
     paths, games, completed_bytes = [], 0, 0
+    metadata_schema = None
+    time_columns = None
     total_bytes = sum(f["size"] for f in archive["files"])
     with operation("month.download", month=archive["month"], files=len(archive["files"]),
                    total_bytes=total_bytes), ThreadPoolExecutor(max_workers=args.workers) as pool:
@@ -135,17 +114,28 @@ def stage_month(archive, args, root):
                   position=1, mininterval=5) as progress:
             for future in as_completed(futures):
                 try:
-                    path, count, size = future.result()
+                    path, metadata, size = future.result()
                 except Exception:
                     for pending in futures:
                         pending.cancel()
                     raise
+                if metadata_schema is None:
+                    metadata_schema = metadata["read_schema"]
+                    time_columns = metadata["time_columns"]
+                elif (metadata_schema != metadata["read_schema"]
+                      or time_columns != metadata["time_columns"]):
+                    for pending in futures:
+                        pending.cancel()
+                    raise ValueError("Inconsistent HF shard schemas within month")
                 paths.append(path)
-                games += count
+                games += metadata["games"]
                 completed_bytes += size
                 progress.update(1)
                 elapsed = max(time.monotonic() - started, 0.001)
                 event("download.progress", month=archive["month"], files=len(paths),
                       total_files=len(futures), bytes=completed_bytes, total_bytes=total_bytes,
                       games=games, bytes_per_second=round(completed_bytes / elapsed))
-    return {**archive, "paths": sorted(paths), "games": games}
+    event("download.summary", month=archive["month"], games=games, bytes=completed_bytes,
+          elapsed_seconds=round(time.monotonic() - started, 2), rewritten_bytes=0)
+    return {**archive, "paths": sorted(paths), "games": games,
+            "read_schema": metadata_schema, "time_columns": time_columns}
