@@ -1,4 +1,4 @@
-from .cli import main
+from .cli import entrypoint
 
 if __name__ == "__main__":  # required for multiprocessing "spawn" on Windows
-    main()
+    raise SystemExit(entrypoint())

@@ -11,15 +11,28 @@ The parse path never extracts the file to disk and never replays moves:
 ```
 
 Header tags become string columns, `movetext` stays one string, and unknown tags
-land in an `extra_tags` map.
+land in an `extra_tags` map. Parsing uses a vectorized parser (NumPy + Arrow
+kernels) and falls back to a simple pure-Python reference parser for unusual
+input; the first chunk of every run is parsed with both and compared.
 
 | Command | Measures |
 |---|---|
-| `download` | Resumable HTTP download of the dump |
+| `download` | Download of the dump: resumable, retried on network errors, sha256-verified against Lichess's `sha256sums.txt` |
 | `decompress` | zstd stream alone — the single-stream ceiling |
 | `parse` | Decompress → chunk → parallel header parse → Parquet; reports where wall time went |
-| `commit` | PyIceberg `add_files` into a local (SQLite-catalog) Iceberg table |
+| `commit` | PyIceberg `add_files` into a local (SQLite-catalog) Iceberg table, verified against the parse manifest |
 | `pychess` | The old approach (python-chess, replays every move) on a sample |
+
+### Logs and results
+
+- **stderr:** timestamped progress every 10 s (`--log-every` to change) with
+  percent done, rate and ETA for download, decompress and parse.
+- **stdout:** only the final JSON result, also appended to `--report`.
+- **Failed or interrupted runs** are recorded too (`"status": "failed"` /
+  `"interrupted"`, the error, and the stats gathered so far), and exit non-zero.
+- Every result includes `resources`: peak memory of the main and worker
+  processes, CPU seconds, and average cores busy (Linux/macOS; inside Docker on
+  Windows too).
 
 ## Run with Docker (recommended)
 
@@ -64,6 +77,7 @@ spike download $URL --out /data/$M.pgn.zst
 spike decompress /data/$M.pgn.zst
 
 # 3. Full parse to Parquet at several worker counts
+#    (re-running into an existing --out directory needs --overwrite)
 foreach ($w in 4, 8, 16, 24) {
   spike parse /data/$M.pgn.zst --workers $w --out /data/parquet-$w
 }
@@ -89,6 +103,11 @@ docker volume rm lichess-data
 
 Quick tries without the full month: add `--limit-mb 2000` to `decompress` or
 `parse`, or pass the URL instead of a file to stream download → parse directly.
+
+**Memory:** `parse` logs an estimated peak at start (roughly
+`workers × (150 MB + 8 × chunk)` plus the in-flight chunks). At 24 workers and the
+default 64 MB chunks that's ~20 GB, within Docker Desktop's default of half your
+RAM. Lower `--chunk-mb` if you've capped Docker's memory.
 
 ## Run without Docker
 
@@ -117,6 +136,9 @@ pip install -e ".[iceberg,dev]" && pytest -q   # or: docker build --target test 
 | `main_waiting_on_workers_s` | Main process blocked because parsers were busy |
 | `worker_parse_s_total` / `worker_write_s_total` | CPU time summed across parser processes |
 | `bottleneck_hint` | Which side dominated |
+| `parity_check` | Whether the fast and reference parsers agreed on the first chunk (should be `equal: true`) |
+| `fallback_chunks` | Chunks that needed the reference parser (should be 0 for Lichess data) |
+| `resources.avg_cores_busy` | How many cores were actually used on average |
 
 If adding workers stops helping and `main_decompress_read_s` ≈ `wall_s`,
 decompression is the ceiling and the parser is fast enough. If workers stay the
@@ -128,5 +150,5 @@ Paste `runs.jsonl` into #16 when done.
 ## Synthetic baseline
 
 On a 2-core dev container with synthetic games (not representative of real
-compression ratios): ~43k games/s per parser process, 73k games/s with 2
-workers, Parquet encoding ~7% of worker time.
+compression ratios): ~59k games/s with 1 parser process and ~88k games/s with 2
+(up from 43k/73k before the vectorized parser).
