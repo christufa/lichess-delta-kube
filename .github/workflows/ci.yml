@@ -25,4 +25,12 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -e ".[iceberg,dev]"
-      - run: pytest -q
+      - name: pytest
+        shell: bash
+        run: |
+          set -o pipefail
+          pytest -q -rfE --tb=short 2>&1 | tee pytest.log
+      - name: Surface failures as annotations
+        if: failure()
+        shell: bash
+        run: grep -E "^(FAILED|ERROR|E  )" pytest.log | head -40 | sed 's/^/::error::/'
