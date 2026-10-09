@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pgn-timing"
-version = "0.1.0"
+version = "0.2.0"
 description = "Time each stage of Lichess .pgn.zst -> Parquet -> Iceberg (ingestion spike)"
 requires-python = ">=3.11"
 dependencies = [
@@ -18,7 +18,7 @@ pychess = ["chess>=1.10"]
 dev = ["pytest>=8"]
 
 [project.scripts]
-pgn-timing = "pgn_timing.cli:main"
+pgn-timing = "pgn_timing.cli:entrypoint"
 
 [tool.setuptools.packages.find]
 where = ["src"]
