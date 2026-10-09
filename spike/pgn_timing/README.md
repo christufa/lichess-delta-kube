@@ -13,83 +13,99 @@ The parse path never extracts the file to disk and never replays moves:
 Header tags become string columns, `movetext` stays one string, and unknown tags
 land in an `extra_tags` map.
 
-## Install
+| Command | Measures |
+|---|---|
+| `download` | Resumable HTTP download of the dump |
+| `decompress` | zstd stream alone — the single-stream ceiling |
+| `parse` | Decompress → chunk → parallel header parse → Parquet; reports where wall time went |
+| `commit` | PyIceberg `add_files` into a local (SQLite-catalog) Iceberg table |
+| `pychess` | The old approach (python-chess, replays every move) on a sample |
 
-```bash
-cd spike/pgn_timing
-python -m venv .venv && . .venv/bin/activate
-pip install -e ".[iceberg,dev]"        # add ,pychess for the python-chess baseline
-pytest -q
+## Run with Docker (recommended)
+
+Requires Docker Desktop (WSL 2 backend on Windows). Everything runs in a Linux
+container, the same way the pipeline will run on AKS.
+
+### One-time setup
+
+In Docker Desktop → **Settings → Resources**:
+
+- **CPUs / memory:** the WSL 2 backend uses all CPUs and half the RAM by
+  default, which is plenty. If you've capped them in `%UserProfile%\.wslconfig`,
+  raise the limits.
+- **Disk:** data lives in the `lichess-data` Docker volume, inside Docker's disk
+  image. One run needs ~150 GB at peak (download + Parquet outputs; delete as you
+  go). Move the **disk image location** to a large SSD if `C:` is tight.
+
+> Use the named volume rather than bind-mounting a Windows folder (`-v D:\...:/data`).
+> Bind mounts from Windows drives are several times slower in Linux containers
+> and would distort the parse and commit timings.
+
+### Build
+
+```powershell
+cd spike\pgn_timing
+docker compose build
 ```
 
-## Running the spike on one month (Windows / PowerShell)
+### Run the spike on one month
 
-Use a recent month (largest file). You need ~150 GB free on a fast SSD: the
-download, plus one Parquet output per worker count you try (delete as you go).
-Pick the output drive accordingly (`D:\lichess` below).
+Use a recent month (largest file). From `spike\pgn_timing` in PowerShell:
+
+```powershell
+$M = "2025-09"
+$URL = "https://database.lichess.org/standard/lichess_db_standard_rated_$M.pgn.zst"
+function spike { docker compose run --rm spike --report /data/runs.jsonl @args }
+
+# 1. Download (resumable: re-run the same command after an interruption)
+spike download $URL --out /data/$M.pgn.zst
+
+# 2. Decompression alone
+spike decompress /data/$M.pgn.zst
+
+# 3. Full parse to Parquet at several worker counts
+foreach ($w in 4, 8, 16, 24) {
+  spike parse /data/$M.pgn.zst --workers $w --out /data/parquet-$w
+}
+
+# 4. Iceberg commit of one Parquet output
+spike commit /data/parquet-16 --warehouse /data/warehouse
+
+# 5. Old approach for comparison
+spike pychess /data/$M.pgn.zst --games 20000
+
+# Copy the results out of the volume
+docker compose run --rm --entrypoint cat spike /data/runs.jsonl > runs.jsonl
+```
+
+Housekeeping:
+
+```powershell
+# Free space between runs
+docker compose run --rm --entrypoint rm spike -rf /data/parquet-4 /data/parquet-8
+# Remove everything when done
+docker volume rm lichess-data
+```
+
+Quick tries without the full month: add `--limit-mb 2000` to `decompress` or
+`parse`, or pass the URL instead of a file to stream download → parse directly.
+
+## Run without Docker
 
 ```powershell
 cd spike\pgn_timing
 py -3.12 -m venv .venv; .\.venv\Scripts\Activate.ps1
 pip install -e ".[iceberg,pychess,dev]"
-
-$M = "2025-09"
-$URL = "https://database.lichess.org/standard/lichess_db_standard_rated_$M.pgn.zst"
-$D = "D:\lichess"; New-Item -ItemType Directory -Force $D | Out-Null
-
-# 1. Download (resumable: re-run the same command after an interruption)
-python -m pgn_timing --report runs.jsonl download $URL --out "$D\$M.pgn.zst"
-
-# 2. Decompression alone - the ceiling for a single zstd stream
-python -m pgn_timing --report runs.jsonl decompress "$D\$M.pgn.zst"
-
-# 3. Full parse to Parquet at several worker counts
-foreach ($w in 4, 8, 16, 24) {
-  python -m pgn_timing --report runs.jsonl parse "$D\$M.pgn.zst" --workers $w --out "$D\parquet-$w"
-}
-
-# 4. Iceberg commit of one Parquet output (local SQLite catalog)
-python -m pgn_timing --report runs.jsonl commit "$D\parquet-16" --warehouse "$D\warehouse"
-
-# 5. Old approach for comparison (python-chess replays every move)
-python -m pgn_timing --report runs.jsonl pychess "$D\$M.pgn.zst" --games 20000
+python -m pgn_timing --report runs.jsonl parse D:\lichess\2025-09.pgn.zst --workers 16 --out D:\lichess\parquet-16
 ```
 
-Close other heavy apps while it runs; on hybrid CPUs (P-cores + E-cores) the
-worker counts past the P-core count show how much E-cores add.
+(Same commands as above, with local paths. On Linux/macOS use `.venv/bin/activate`.)
 
-## Running on Linux (VM or WSL)
-
-On an Azure VM in the target region with ~16 cores and a local SSD:
+## Development
 
 ```bash
-M=2025-09
-URL=https://database.lichess.org/standard/lichess_db_standard_rated_$M.pgn.zst
-
-# 1. Download (resumable: re-run the same command after an interruption)
-pgn-timing --report runs.jsonl download $URL --out /mnt/data/$M.pgn.zst
-
-# 2. Decompression alone — the ceiling for a single zstd stream
-pgn-timing --report runs.jsonl decompress /mnt/data/$M.pgn.zst
-
-# 3. Full parse to Parquet; repeat with different worker counts
-for w in 4 8 16; do
-  pgn-timing --report runs.jsonl parse /mnt/data/$M.pgn.zst --workers $w --out /mnt/data/parquet-$w
-done
-
-# 4. Iceberg commit of the Parquet files (local SQLite catalog)
-pgn-timing --report runs.jsonl commit /mnt/data/parquet-16 --warehouse /mnt/data/warehouse
-
-# 5. Old approach for comparison (python-chess replays every move)
-pgn-timing --report runs.jsonl pychess /mnt/data/$M.pgn.zst --games 20000
+pip install -e ".[iceberg,dev]" && pytest -q   # or: docker build --target test .
 ```
-
-Quick tries without the full month:
-
-- `--limit-mb 2000` on `decompress` or `parse` stops after 2 GB of decompressed PGN.
-- `parse` and `decompress` accept the URL directly, which streams download →
-  decompress → parse with no local file.
-- Omit `--out` on `parse` to time Parquet encoding without writing files.
 
 ## Reading the result
 
@@ -104,9 +120,10 @@ Quick tries without the full month:
 
 If adding workers stops helping and `main_decompress_read_s` ≈ `wall_s`,
 decompression is the ceiling and the parser is fast enough. If workers stay the
-bottleneck at high core counts, that's the case for the Rust parser (#22).
+bottleneck at high core counts, that's the case for the Rust parser (#22). On
+hybrid CPUs, worker counts past the P-core count show what E-cores add.
 
-Please paste `runs.jsonl` into #16 when done.
+Paste `runs.jsonl` into #16 when done.
 
 ## Synthetic baseline
 
