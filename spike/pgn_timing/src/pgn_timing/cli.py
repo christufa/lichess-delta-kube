@@ -118,22 +118,24 @@ def cmd_commit(args) -> dict:
     import pyarrow.parquet as pq
     from pyiceberg.catalog.sql import SqlCatalog
 
-    files = [p.resolve().as_posix() for p in sorted(Path(args.parquet_dir).glob("*.parquet"))]
+    files = [p.resolve().as_uri() for p in sorted(Path(args.parquet_dir).glob("*.parquet"))]
     if not files:
         raise SystemExit(f"no parquet files in {args.parquet_dir}")
     os.makedirs(args.warehouse, exist_ok=True)
     wh = Path(args.warehouse).resolve()
     # as_posix()/as_uri() keep these valid on Windows (C:/... and file:///C:/...)
-    catalog = SqlCatalog("spike", uri=f"sqlite:///{(wh / 'catalog.db').as_posix()}", warehouse=wh.as_uri())
+    # fsspec FileIO: the default PyArrow FileIO mangles file:///C:/ paths on Windows.
+    catalog = SqlCatalog("spike", uri=f"sqlite:///{(wh / 'catalog.db').as_posix()}", warehouse=wh.as_uri(),
+                         **{"py-io-impl": "pyiceberg.io.fsspec.FsspecFileIO"})
     catalog.create_namespace_if_not_exists("raw")
     ident = "raw.games_spike"
     if catalog.table_exists(ident):
         catalog.drop_table(ident)
-    table = catalog.create_table(ident, schema=pq.read_schema(files[0]))
+    table = catalog.create_table(ident, schema=pq.read_schema(next(Path(args.parquet_dir).glob("*.parquet"))))
     t0 = time.perf_counter()
     table.add_files(files)
     elapsed = time.perf_counter() - t0
-    rows = sum(pq.ParquetFile(f).metadata.num_rows for f in files)
+    rows = sum(pq.ParquetFile(p).metadata.num_rows for p in sorted(Path(args.parquet_dir).glob("*.parquet")))
     snapshot = table.refresh().current_snapshot()
     return {"stage": "commit", "files": len(files), "rows": rows, "seconds": round(elapsed, 2),
             "snapshot_id": snapshot.snapshot_id if snapshot else None,

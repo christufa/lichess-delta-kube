@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-iceberg = ["pyiceberg[sql-sqlite,pyarrow]>=0.9"]
+iceberg = ["pyiceberg[sql-sqlite,pyarrow]>=0.9", "fsspec"]
 pychess = ["chess>=1.10"]
 dev = ["pytest>=8"]
 
