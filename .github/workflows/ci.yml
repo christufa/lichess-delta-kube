@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  spike-pgn-timing:
+    name: spike/pgn_timing tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        working-directory: spike/pgn_timing
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[iceberg,dev]"
+      - name: pytest
+        shell: bash
+        run: |
+          set -o pipefail
+          pytest -q -rfE --tb=short 2>&1 | tee pytest.log
+      - name: Surface failures as annotations
+        if: failure()
+        shell: bash
+        run: grep -E "^(FAILED|ERROR|E  )" pytest.log | head -40 | sed 's/^/::error::/'
+
+  spike-docker:
+    name: spike/pgn_timing docker image
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: spike/pgn_timing
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run tests in the image
+        run: docker build --target test -t pgn-timing:test .
+      - name: Build runtime image
+        run: docker compose build
+      - name: Smoke test parse and commit through compose
+        run: |
+          docker run --rm -v lichess-data:/data --entrypoint python pgn-timing:test -c "
+          import random, sys, zstandard
+          sys.path.insert(0, '/app/tests')
+          from conftest import make_game
+          rng = random.Random(0)
+          text = ''.join(make_game(i, rng) for i in range(20000))
+          open('/data/sample.pgn.zst', 'wb').write(zstandard.ZstdCompressor().compress(text.encode()))
+          "
+          docker compose run --rm spike --report /data/runs.jsonl parse /data/sample.pgn.zst --workers 2 --chunk-mb 4 --out /data/parquet \
+            | python3 -c "import json,sys; r=json.load(sys.stdin); assert r['games'] == 20000, r; print(r['games'], 'games', r['games_per_s'], 'games/s')"
+          docker compose run --rm spike commit /data/parquet --warehouse /data/warehouse \
+            | python3 -c "import json,sys; r=json.load(sys.stdin); assert r['rows'] == 20000, r; print(r['rows'], 'rows committed')"
+          docker compose run --rm --entrypoint cat spike /data/runs.jsonl

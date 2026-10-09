@@ -1,0 +1,16 @@
+name: pgn-timing
+
+services:
+  spike:
+    build:
+      context: .
+      target: runtime
+    image: pgn-timing:local
+    volumes:
+      # Named volume: lives inside Docker's own disk, which is much faster than
+      # bind-mounting a Windows drive (D:\...) into a Linux container.
+      - lichess-data:/data
+
+volumes:
+  lichess-data:
+    name: lichess-data
