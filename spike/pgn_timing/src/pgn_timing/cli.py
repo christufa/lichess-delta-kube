@@ -10,7 +10,6 @@ Stages (each runnable on its own):
 from __future__ import annotations
 
 import argparse
-import glob
 import json
 import multiprocessing
 import os
@@ -18,6 +17,7 @@ import platform
 import sys
 import time
 from collections import Counter
+from pathlib import Path
 from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 
 from .parse import iter_chunks, process_chunk
@@ -118,12 +118,13 @@ def cmd_commit(args) -> dict:
     import pyarrow.parquet as pq
     from pyiceberg.catalog.sql import SqlCatalog
 
-    files = sorted(glob.glob(os.path.join(args.parquet_dir, "*.parquet")))
+    files = [p.resolve().as_posix() for p in sorted(Path(args.parquet_dir).glob("*.parquet"))]
     if not files:
         raise SystemExit(f"no parquet files in {args.parquet_dir}")
     os.makedirs(args.warehouse, exist_ok=True)
-    catalog = SqlCatalog("spike", uri=f"sqlite:///{os.path.abspath(args.warehouse)}/catalog.db",
-                         warehouse=f"file://{os.path.abspath(args.warehouse)}")
+    wh = Path(args.warehouse).resolve()
+    # as_posix()/as_uri() keep these valid on Windows (C:/... and file:///C:/...)
+    catalog = SqlCatalog("spike", uri=f"sqlite:///{(wh / 'catalog.db').as_posix()}", warehouse=wh.as_uri())
     catalog.create_namespace_if_not_exists("raw")
     ident = "raw.games_spike"
     if catalog.table_exists(ident):

@@ -10,8 +10,12 @@ permissions:
 
 jobs:
   spike-pgn-timing:
-    name: spike/pgn_timing tests
-    runs-on: ubuntu-latest
+    name: spike/pgn_timing tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     defaults:
       run:
         working-directory: spike/pgn_timing

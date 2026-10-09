@@ -22,10 +22,45 @@ pip install -e ".[iceberg,dev]"        # add ,pychess for the python-chess basel
 pytest -q
 ```
 
-## Running the spike on one month
+## Running the spike on one month (Windows / PowerShell)
 
-Use a recent month (largest file). On an Azure VM in the target region with
-~16 cores and a local SSD:
+Use a recent month (largest file). You need ~150 GB free on a fast SSD: the
+download, plus one Parquet output per worker count you try (delete as you go).
+Pick the output drive accordingly (`D:\lichess` below).
+
+```powershell
+cd spike\pgn_timing
+py -3.12 -m venv .venv; .\.venv\Scripts\Activate.ps1
+pip install -e ".[iceberg,pychess,dev]"
+
+$M = "2025-09"
+$URL = "https://database.lichess.org/standard/lichess_db_standard_rated_$M.pgn.zst"
+$D = "D:\lichess"; New-Item -ItemType Directory -Force $D | Out-Null
+
+# 1. Download (resumable: re-run the same command after an interruption)
+python -m pgn_timing --report runs.jsonl download $URL --out "$D\$M.pgn.zst"
+
+# 2. Decompression alone - the ceiling for a single zstd stream
+python -m pgn_timing --report runs.jsonl decompress "$D\$M.pgn.zst"
+
+# 3. Full parse to Parquet at several worker counts
+foreach ($w in 4, 8, 16, 24) {
+  python -m pgn_timing --report runs.jsonl parse "$D\$M.pgn.zst" --workers $w --out "$D\parquet-$w"
+}
+
+# 4. Iceberg commit of one Parquet output (local SQLite catalog)
+python -m pgn_timing --report runs.jsonl commit "$D\parquet-16" --warehouse "$D\warehouse"
+
+# 5. Old approach for comparison (python-chess replays every move)
+python -m pgn_timing --report runs.jsonl pychess "$D\$M.pgn.zst" --games 20000
+```
+
+Close other heavy apps while it runs; on hybrid CPUs (P-cores + E-cores) the
+worker counts past the P-core count show how much E-cores add.
+
+## Running on Linux (VM or WSL)
+
+On an Azure VM in the target region with ~16 cores and a local SSD:
 
 ```bash
 M=2025-09
