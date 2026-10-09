@@ -1,199 +1,21 @@
-# lichess-games-download
+# lichess-delta-kube
 
-Incrementally import the official [Lichess Standard Chess Games dataset](https://huggingface.co/datasets/Lichess/standard-chess-games)
-from Hugging Face into a Unity Catalog Delta table on Databricks.
+A data platform for the full [Lichess](https://lichess.org) game history:
+monthly PGN dumps from [database.lichess.org](https://database.lichess.org/)
+are landed in Azure Data Lake Storage, parsed into Iceberg tables, and modeled
+for analysis. Batch work runs as containers on Azure Kubernetes Service.
 
-```text
-HF monthly Parquet shards -> volume cache -> Spark direct read + time formatting -> Delta
-```
+> The previous Databricks pipeline (Hugging Face Parquet → Unity Catalog Delta)
+> is preserved at the `databricks-final` tag.
 
-The serverless job has one installed wheel task, `sync`. It discovers published
-months, downloads shards concurrently, reads their footers, and commits each month before starting
-the next. There is no PGN download/extraction, chess move parsing, or HF upload.
-The source is public and CC0; no HF token or secret scope is required.
+## Status
 
-## What gets loaded
+Planning and measurement. See [docs/ROADMAP.md](docs/ROADMAP.md) for the data
+flow, phases and layout, and the GitHub milestones for the issue-level plan.
 
-Source: `Lichess/standard-chess-games`, `data/year=YYYY/month=MM/train-*.parquet`.
-Live inspection on October 3, 2026 found 153 months (January 2013 through September
-2025), totaling about 4.94 TB of source Parquet. Publication may lag the original
-Lichess PGN archives. Discovery uses the repository contents, not a calendar guess.
+Current work: the ingestion spike — [`spike/pgn_timing`](spike/pgn_timing)
+times download, decompression, parsing and Iceberg commit for one real month.
 
-The original HF columns and values are retained, including `Event`, `Site`,
-`White`, `Black`, ratings, `UTCDate`, `ECO`, `Opening`, `TimeControl`, and
-`movetext`. Arrow time columns such as `UTCTime` are converted to strings
-(e.g. `12:34:56.123`) for Spark compatibility; nulls remain null. Date and numeric
-types are preserved. `variant=standard` and `archive_month=YYYY-MM` are added
-as Delta partition columns. Source revision and shard identities are recorded
-in the run plan and completion checkpoints.
+## Decisions
 
-This schema does not contain the previous pipeline's derived per-move FENs,
-UCI moves, parsed clock/evaluation JSON, or reconstructed PGN column. The original
-clock/evaluation comments remain in `movetext` where present. Spark reads TIME_MILLIS as its physical INT32 value using an explicit schema,
-then formats the time inside the Delta write. No intermediate Parquet rewrite
-is performed. Schema and row counts come from shard footers; unsupported or
-inconsistent shard schemas fail before insertion. Chess moves are never interpreted.
-
-The default destination is **`brikt.lichess_dev.games_hf`** in dev and
-**`brikt.lichess.games_hf`** in prod. Existing `games` tables and old PGN checkpoints
-are left intact; the new format uses a separate checkpoint identity. Do not point
-this importer at the old enriched table without an explicit schema migration.
-
-## Parameters and schedule
-
-| Parameter | Default | Behavior |
-| --- | --- | --- |
-| `year`, `month` | `0`, `0` | Sync all published months missing or changed locally |
-| `limit` | `0` | Maximum pending months per run; 0 means all |
-| `workers` | `4` | Concurrent shard download workers, 1-16 |
-
-Set both year and month for an explicit month. Missing explicit months fail
-clearly; there is no PGN fallback. Months run oldest first. `limit` counts pending
-months after unchanged completed months have been excluded. Each selected month
-always includes all its shards; incomplete upstream shard sets fail discovery.
-
-The dev schedule remains the 5th of each month at 06:00 America/New_York; prod is
-paused by default. Each scheduled run discovers all available months, so late
-publications are picked up on a subsequent run. The first unrestricted run is a
-full historical backfill. No multi-terabyte download is started by deployment
-itself, but the next enabled scheduled run will perform that backfill.
-
-## Setup and deployment
-
-Serverless jobs, Unity Catalog, and outbound access to Hugging Face, its download
-storage endpoints, and PyPI are required. The runtime supplies Spark, Delta and
-PyArrow; the task installs the pinned HF client with Xet support and tqdm.
-The job identity must be able to read/write its volume and create/write its table.
-
-```powershell
-python -m pip install -r requirements-dev.txt
-databricks auth login --host https://YOUR_WORKSPACE
-# Only bootstrap these if absent (already created for brikt dev):
-databricks schemas create lichess_dev brikt -p brikt
-databricks volumes create brikt lichess_dev staging MANAGED -p brikt
-databricks bundle validate -p brikt -t dev
-databricks bundle deploy -p brikt -t dev --fail-on-active-runs
-# Smallest available month for a deployed smoke test:
-databricks bundle run -p brikt -t dev lichess_pipeline --params year=2013,month=1
-# One pending month at a time:
-databricks bundle run -p brikt -t dev lichess_pipeline --params limit=1
-# Full backfill / subsequent incremental sync:
-databricks bundle run -p brikt -t dev lichess_pipeline
-```
-
-The wheel artifact volume must exist before deployment. Deploy identity needs
-WRITE VOLUME and job identity needs READ VOLUME for installation. Bundle variables
-are `catalog`, `schema`, `volume`, `table`, and `schedule_status`; use
-`BUNDLE_VAR_<name>` or `--var 'table=another_table'` to override them. `.env` is
-excluded from deployment and is not used. The installed entry point is `sync`.
-
-Local changes do not modify an active run. A run started under the old deployment
-still has its original extract/insert/upload tasks. Deployment uses
-`--fail-on-active-runs`; finish or explicitly manage that run before replacing the
-job definition. No existing HF dataset, Delta table, or old checkpoint is deleted.
-
-## GitHub Actions deployment
-
-`.github/workflows/databricks.yml` runs **Tests and wheel** on pull requests to
-`main`. Pushes/merges to `main` run the same checks and then validate and deploy
-the existing `dev` bundle. You can also select **Run workflow** on `main` to retry
-a deployment. The workflow deploys the job definition; it does not start a data
-run or deploy the prod target.
-
-The `databricks-dev` GitHub environment is restricted to the `main` branch and
-has already been configured with:
-
-- Variable `DATABRICKS_HOST`: the brikt workspace URL.
-- Variable `DATABRICKS_DEPLOY_USER`: `chris.lavalle00@gmail.com`.
-- Secret `DATABRICKS_TOKEN`: a dedicated 90-day deployment token for that user.
-
-The current token expires **January 1, 2027 at 19:07 UTC**. Rotate it before then
-by creating a replacement Databricks token and updating `DATABRICKS_TOKEN` under
-GitHub Settings -> Environments -> databricks-dev. PR test jobs have no access to deployment secrets.
-
-Deployment verifies the authenticated user before updating the bundle. This
-preserves the existing user-scoped dev deployment and avoids creating a second
-scheduled job under another identity. Deployments are serialized and bundle
-locking is enabled. Deployment fails while a data run is active; rerun the
-GitHub deployment after the data run ends. It does not cancel that run.
-
-For longer-term automation, migrate to a service principal with GitHub OIDC and
-explicitly migrate/bind the existing bundle state and job permissions. Simply
-swapping the identity would create a different dev deployment.
-
-You can now require the **Tests and wheel** check in `protect-main` after its
-first successful GitHub run. Deployment runs after merge and should not be a
-required PR check.
-
-## Reliability and storage
-
-One job run is allowed at a time. The task has two automatic retries with a
-60-second minimum interval. Do not have another job concurrently write to the
-same table: Delta version attribution assumes this importer owns table writes.
-
-`runs/<run-id>/hf-plan.json` pins the exact repository commit and shard list for
-repairs. Each month gets a fingerprint from its file paths, sizes and content
-identities. A new repository commit does not cause unchanged months to reload;
-changed month files trigger partition replacement. New runs discover fresh source
-state; repairs keep the original plan. Changing selection parameters requires a
-new run. Removed upstream months are not automatically deleted from Delta.
-
-Downloaded files are cached under `hf/<fingerprint>/raw/`, relative to the volume
-root. The HF client resumes interrupted downloads. No new `prepared/` copy is
-created. Existing raw caches and completed month checkpoints from version 0.3.0
-are reused because the resulting Delta schema and values are unchanged. Old
-prepared files are left intact; cleanup is a separate operation. Budget for raw
-cache plus Delta storage.
-
-For each month, Spark loads explicit original Parquet file paths and replaces only the
-matching `variant`/`archive_month` partition. The committed Delta snapshot row
-count is checked against source Parquet metadata. Only then is an `insert.json`
-checkpoint written under `history/<source-format-table-hash>/standard/YYYY-MM/`.
-A retry after a failed write/verification safely replaces the month again.
-`runs/<run-id>/delta.json` records months completed by that run. An unchanged
-completed month requires no shard download or Delta write on subsequent runs.
-Checkpoint reuse assumes the table has not been manually deleted or changed.
-
-## Progress and diagnostics
-
-`tqdm` displays month progress, per-month file progress,
-and the HF client's download progress. Structured JSON stdout logs remain useful
-when Databricks renders terminal progress bars poorly:
-
-- `source.discovered`: pinned revision, available month range, file count and bytes.
-- `sync.selection` / `sync.plan`: number of selected pending months.
-- `download.progress`: completed files/bytes versus totals, row count and effective
-  staging bytes/sec (includes cache hits and footer checks, not pure network speed).
-- `download.summary`: download/footer duration and confirmation that no bytes were rewritten.
-- `delta.write`, `delta.verify`, `month.download`, `source.discover`, `task`:
-  start/completion/failure plus a heartbeat every 60 seconds while pending.
-- `sync.progress`: completed months, rows, and byte-weighted progress through the selected plan.
-- `sync.summary`: completed months and rows.
-
-Heartbeats indicate liveness, not a fabricated Spark percentage or ETA. Logs have
-UTC timestamps and run IDs and redact token patterns and URL query strings.
-
-## Validation
-
-```powershell
-python -m pytest -q
-python -m build --wheel
-```
-
-Tests cover revision pinning, complete shard discovery, changed-source detection,
-footer schema validation, checkpoint isolation, retry behavior, partition
-replacement and verification failures. Local tests mock Spark; a deployed smoke
-run is required to verify actual Databricks permissions and Delta integration.
-
-
-### Direct-read benchmark
-
-An isolated Databricks serverless test on a 210 MB, 534,390-row May 2015 shard
-compared rewrite-plus-Delta against direct reading with an explicit schema.
-The initial implementation measured 58.4 vs 13.0 seconds on the first round and
-37.8 vs 6.7 seconds on a warm round. Full-row multiset equality passed both times.
-These measurements exclude HF downloads and do not predict full-backfill speedup.
-The reproducible harness is `scripts/hf_ingest_smoke.py`; it uses the production
-reader, an independent rewrite baseline, and separate `hf_smoke_*` tables.
-Deploying while an old run is active remains blocked; its running wheel cannot
-be hot-swapped. A subsequent run reuses completed monthly checkpoints.
+Architecture decisions are recorded in [docs/adr/](docs/adr/).

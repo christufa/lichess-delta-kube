@@ -1,11 +1,13 @@
 data/
 *.pgn
 *.pgn.zst
+*.parquet
+runs.jsonl
+warehouse/
 __pycache__/
 *.pyc
 .env
 .env.*
-.databricks/
 .venv/
 .pytest_cache/
 dist/
