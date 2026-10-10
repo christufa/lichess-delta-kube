@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lichess-ingest"
+version = "0.1.0"
+description = "Bootstrap Lichess standard games into raw Parquet in ADLS, month by month"
+requires-python = ">=3.11"
+dependencies = [
+  "zstandard>=0.23",
+  "pyarrow>=17",
+  "numpy>=1.26",
+  "azure-storage-blob>=12.20",
+  "azure-identity>=1.17",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+lichess-ingest = "lichess_ingest.cli:entrypoint"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["azurite: needs an Azurite blob endpoint (AZURITE_BLOB_URL)"]

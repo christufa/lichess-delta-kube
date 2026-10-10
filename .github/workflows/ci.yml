@@ -62,3 +62,54 @@ jobs:
           docker compose run --rm spike commit /data/parquet --warehouse /data/warehouse \
             | python3 -c "import json,sys; r=json.load(sys.stdin); assert r['rows'] == 20000, r; print(r['rows'], 'rows committed')"
           docker compose run --rm --entrypoint cat spike /data/runs.jsonl
+
+  ingest:
+    name: ingest tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        working-directory: ingest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        if: runner.os == 'Linux'
+        with:
+          node-version: "20"
+      - name: Start Azurite (blob)
+        if: runner.os == 'Linux'
+        run: |
+          npm install -g azurite@3
+          azurite-blob --silent --blobHost 127.0.0.1 --blobPort 10000 --skipApiVersionCheck --location "$RUNNER_TEMP/azurite" &
+          echo "AZURITE_BLOB_URL=http://127.0.0.1:10000/devstoreaccount1" >> "$GITHUB_ENV"
+      - run: pip install -e ".[dev]"
+      - name: pytest
+        shell: bash
+        run: |
+          set -o pipefail
+          pytest -q -rfEs --tb=short 2>&1 | tee pytest.log
+      - name: Surface failures as annotations
+        if: failure()
+        shell: bash
+        run: grep -E "^(FAILED|ERROR|E  )" pytest.log | head -40 | sed 's/^/::error::/'
+
+  ingest-docker:
+    name: ingest docker image
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ingest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run tests in the image
+        run: docker build --target test -t lichess-ingest:test .
+      - name: Build runtime image and smoke test the CLI
+        run: |
+          docker compose build
+          docker compose run --rm ingest --help
