@@ -1,7 +1,18 @@
-# Subscription-wide monthly budget. Alerts only: Azure budgets never stop or
-# delete anything. The hard limits are the spot pool's max_count (compute) and
-# your vCPU quotas.
+# Monthly budget for this project only: costs in the Lichess resource groups,
+# including the node resource group AKS creates for its VMs. Anything else in the
+# subscription (e.g. Databricks) isn't counted. Alerts only: Azure budgets never
+# stop or delete anything. The hard limits are the spot pool's max_count (compute)
+# and your vCPU quotas.
 # https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/consumption_budget_subscription
+locals {
+  budget_resource_groups = [
+    "rg-${var.project}-tfstate",
+    "rg-${var.project}-platform",
+    "rg-${var.project}-compute",
+    "rg-${var.project}-compute-nodes", # created by AKS; holds the VMs, disks, load balancer
+  ]
+}
+
 resource "azurerm_consumption_budget_subscription" "monthly" {
   name            = "budget-${var.project}-monthly"
   subscription_id = "/subscriptions/${var.subscription_id}"
@@ -10,6 +21,13 @@ resource "azurerm_consumption_budget_subscription" "monthly" {
 
   time_period {
     start_date = var.budget_start_date
+  }
+
+  filter {
+    dimension {
+      name   = "ResourceGroupName"
+      values = local.budget_resource_groups
+    }
   }
 
   # Spend so far this month
