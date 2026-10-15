@@ -1,0 +1,7 @@
+# Copy to state.tfbackend (gitignored) and fill in from:
+#   terraform -chdir=bootstrap output
+# Used by platform and compute:  terraform init -backend-config=../state.tfbackend
+resource_group_name  = "rg-<project>-tfstate"
+storage_account_name = "st<project>tf<suffix>"
+container_name       = "tfstate"
+use_azuread_auth     = true
