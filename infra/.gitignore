@@ -7,3 +7,4 @@ crash.log
 !*.tfvars.example
 tfplan
 *.tfbackend
+*.tfbackend
