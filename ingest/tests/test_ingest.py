@@ -181,6 +181,20 @@ def test_shared_options_work_before_or_after_the_subcommand(lichess, tmp_path):
     assert month_files(dest, "2013-02") and not month_files(dest, "2013-01")
 
 
+def test_blob_check_only_lists_blobs():
+    """A container SAS may list blobs but not read container properties; check() must stay within that."""
+    from unittest import mock
+    from lichess_ingest.dest import BlobDest
+    d = BlobDest.__new__(BlobDest)
+    d.prefix, d.url = "bootstrap", "https://acct.blob.core.windows.net/lake/bootstrap"
+    d.container = mock.MagicMock()
+    d.container.list_blobs.return_value = iter([])
+    d.check()
+    d.container.list_blobs.assert_called_once()
+    d.container.exists.assert_not_called()
+    d.container.get_container_properties.assert_not_called()
+
+
 def test_placeholder_dest_is_rejected():
     with pytest.raises(SystemExit, match="placeholder"):
         cli.main(["--dest", "abfss://<container>@<account>.dfs.core.windows.net/bootstrap", "plan"])
@@ -218,6 +232,9 @@ def test_end_to_end_against_azurite(lichess, tmp_path, monkeypatch):
     assert run(lichess, dest, tmp_path / "work", "--file-mb", "0.01") == 0
 
     d = open_dest(dest)
+    d.check()
+    with pytest.raises(FileNotFoundError):
+        open_dest(f"{blob_url}/missing{uuid.uuid4().hex[:8]}/x").check()
     m = d.get_json("_state/raw_games/2013-01.json")
     assert m["games"] == 1500
     assert d.list("raw/games/month=2013-01/") == [f["name"] for f in m["files"]]
