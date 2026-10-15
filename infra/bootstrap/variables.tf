@@ -15,7 +15,7 @@ variable "project" {
 }
 
 variable "budget_amount" {
-  description = "Monthly budget for the whole subscription, in your billing currency"
+  description = "Monthly budget for the Lichess resource groups, in your billing currency"
   type        = number
   default     = 100
 }
