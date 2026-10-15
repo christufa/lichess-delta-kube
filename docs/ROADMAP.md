@@ -24,8 +24,9 @@ Lichess .pgn.zst ─► landing (ADLS, unchanged) ─► raw.games (Iceberg) ─
 | Stage | Where |
 |---|---|
 | Development | Locally, in Docker, on small early months |
-| Ingestion spike | A single Azure VM in the target region |
-| Production | Containers in ACR, one Kubernetes Job per month on AKS (batch pool scales to zero) |
+| Ingestion spike | Done locally (results in #16) |
+| Historical bootstrap | `ingest/` (`lichess-ingest`) on the workstation, month by month, writing straight to ADLS |
+| Monthly updates | Containers in ACR, one Kubernetes Job per month on AKS (batch pool scales to zero) |
 | Large joins / positions | Spark on the same AKS cluster (Phase 5) |
 
 ## Milestones
@@ -45,8 +46,8 @@ Lichess .pgn.zst ─► landing (ADLS, unchanged) ─► raw.games (Iceberg) ─
 ```text
 docs/        roadmap and architecture decision records (docs/adr/)
 spike/       throwaway measurement tools (spike/pgn_timing)
-ingest/      production parser (planned: pgn2parquet)
-jobs/        Python jobs: landing, Iceberg commits, curated builds (planned)
+ingest/      lichess-ingest: download, verify, parse and land raw Parquet in ADLS
+jobs/        Python jobs: Iceberg commits, curated builds (planned)
 infra/       Terraform (planned)
 deploy/      Kubernetes manifests (planned)
 ```
