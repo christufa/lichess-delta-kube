@@ -1,0 +1,11 @@
+# Copy to terraform.tfvars (gitignored).
+subscription_id = "00000000-0000-0000-0000-000000000000"
+
+# Same values as ../state.tfbackend (terraform -chdir=../bootstrap output)
+state_resource_group_name  = "rg-<project>-tfstate"
+state_storage_account_name = "st<project>tf<suffix>"
+
+# Optional overrides
+# system_vm_size  = "Standard_D2as_v5"
+# batch_vm_size   = "Standard_E8as_v5"
+# batch_max_nodes = 3

@@ -48,6 +48,6 @@ docs/        roadmap and architecture decision records (docs/adr/)
 spike/       throwaway measurement tools (spike/pgn_timing)
 ingest/      lichess-ingest: download, verify, parse and land raw Parquet in ADLS
 jobs/        Python jobs: Iceberg commits, curated builds (planned)
-infra/       Terraform (planned)
+infra/       Terraform: bootstrap (state, budget), platform (lake, network), compute (ACR, AKS)
 deploy/      Kubernetes manifests (planned)
 ```

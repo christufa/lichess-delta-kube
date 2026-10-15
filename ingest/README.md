@@ -35,9 +35,10 @@ that are done, so you can stop (Ctrl+C) and resume any time.
 
 ## Setup
 
-1. **Storage:** an ADLS Gen2 (or plain Blob) account and container, for example
-   from the first part of #18. Your user needs the **Storage Blob Data
-   Contributor** role on it.
+1. **Storage:** the lake from `infra/platform` (see `infra/README.md`). Your
+   user gets the **Storage Blob Data Contributor** role there, and your IP must
+   be on the lake's firewall. `terraform output lichess_dest` (in
+   `infra/platform`) prints the value for `LICHESS_DEST`.
 2. **Credentials:** copy `.env.example` to `.env` and fill in `LICHESS_DEST` and a
    SAS token:
    ```powershell
