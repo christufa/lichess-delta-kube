@@ -14,7 +14,7 @@ terraform {
 
   # Partial backend config: the state account's name is kept out of this public repo.
   # The rest comes from ../state.tfbackend (gitignored; copy state.tfbackend.example):
-  #   terraform init -backend-config=../state.tfbackend
+  #   terraform init "-backend-config=../state.tfbackend"
   # https://developer.hashicorp.com/terraform/language/backend#partial-configuration
   backend "azurerm" {
     key = "platform.tfstate"
