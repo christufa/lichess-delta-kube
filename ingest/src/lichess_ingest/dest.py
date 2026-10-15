@@ -117,9 +117,17 @@ class BlobDest:
             pass
 
     def check(self) -> None:
-        """Fail fast on bad credentials or a missing container."""
-        if not self.container.exists():
-            raise FileNotFoundError(f"container does not exist: {self.url}")
+        """Fail fast on bad credentials, the firewall, or a missing container.
+
+        Lists at most one blob rather than reading container properties: a
+        container-scoped SAS (what ingest uses) may list blobs but is not
+        allowed to read the container's properties.
+        """
+        from azure.core.exceptions import ResourceNotFoundError
+        try:
+            next(iter(self.container.list_blobs(name_starts_with=self._name(""), results_per_page=1)), None)
+        except ResourceNotFoundError:
+            raise FileNotFoundError(f"container does not exist: {self.url}") from None
 
 
 def open_dest(url: str):

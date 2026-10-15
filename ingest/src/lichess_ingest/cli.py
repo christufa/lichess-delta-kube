@@ -130,21 +130,34 @@ def cmd_run(args) -> int:
     return 1 if failures else 0
 
 
+def _add_shared(p: argparse.ArgumentParser, suppress: bool) -> None:
+    """Options accepted both before and after the subcommand (`--months 2013 run` or `run --months 2013`).
+
+    On the subcommands the defaults are suppressed, so a value given before the
+    subcommand isn't overwritten by the subcommand's default.
+    """
+    d = (lambda v: argparse.SUPPRESS) if suppress else (lambda v: v)
+    p.add_argument("--dest", default=d(os.environ.get("LICHESS_DEST")),
+                   help="output location (env LICHESS_DEST): abfss://<container>@<account>.dfs.core.windows.net[/prefix], "
+                        "https://<account>.blob.core.windows.net/<container>[/prefix] or a local directory")
+    p.add_argument("--base-url", default=d(os.environ.get("LICHESS_BASE_URL", DEFAULT_BASE_URL)))
+    p.add_argument("--months", default=d(None),
+                   help="'2013-01:2016-12', '2017', '2025-09' or a comma-separated mix (default: all)")
+    p.add_argument("--log-every", type=float, default=d(30.0), help="seconds between progress lines")
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="lichess-ingest", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--dest", default=os.environ.get("LICHESS_DEST"),
-                   help="output location (env LICHESS_DEST): abfss://<container>@<account>.dfs.core.windows.net[/prefix], "
-                        "https://<account>.blob.core.windows.net/<container>[/prefix] or a local directory")
-    p.add_argument("--base-url", default=os.environ.get("LICHESS_BASE_URL", DEFAULT_BASE_URL))
-    p.add_argument("--months", help="'2013-01:2016-12', '2017', '2025-09' or a comma-separated mix (default: all)")
-    p.add_argument("--log-every", type=float, default=30.0, help="seconds between progress lines")
+    _add_shared(p, suppress=False)
+    shared = argparse.ArgumentParser(add_help=False)
+    _add_shared(shared, suppress=True)
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    pl = sub.add_parser("plan", help="show done / pending months")
+    pl = sub.add_parser("plan", parents=[shared], help="show done / pending months")
     pl.set_defaults(fn=cmd_plan)
 
-    r = sub.add_parser("run", help="ingest pending months, oldest first")
+    r = sub.add_parser("run", parents=[shared], help="ingest pending months, oldest first")
     r.add_argument("--work", default=os.environ.get("LICHESS_WORK", "./work"),
                    help="local scratch for downloads and staging (needs ~2-3 months of space)")
     r.add_argument("--max-months", type=int, help="stop after this many months")
@@ -167,6 +180,9 @@ def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
     if not args.dest:
         raise SystemExit("--dest (or LICHESS_DEST) is required")
+    if "<" in args.dest or ">" in args.dest:
+        raise SystemExit(f"--dest still contains a placeholder: {args.dest!r}. "
+                         "Set LICHESS_DEST in .env (terraform output lichess_dest in infra/platform).")
     return args.fn(args)
 
 

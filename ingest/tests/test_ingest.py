@@ -165,6 +165,41 @@ def test_console_entry_point(lichess, tmp_path):
     assert "2013-01: committed" in proc.stderr
 
 
+def test_shared_options_work_before_or_after_the_subcommand(lichess, tmp_path):
+    for m in ["2013-01", "2013-02", "2014-01"]:
+        lichess.add_month(m, 100)
+    dest = tmp_path / "lake"
+    base = ["--dest", str(dest), "--base-url", lichess.base_url]
+    for argv in (base + ["--months", "2013-02", "run"], ["run"] + base + ["--months", "2013-02"]):
+        args = cli.build_parser().parse_args(argv + ["--work", str(tmp_path / "w")])
+        assert args.months == "2013-02" and args.dest == str(dest) and args.log_every == 30.0
+    # a value before the subcommand is kept when the subcommand doesn't repeat it
+    args = cli.build_parser().parse_args(["--log-every", "5", "plan"] + base)
+    assert args.log_every == 5.0
+    assert cli.main(["run"] + base + ["--months", "2013-02", "--work", str(tmp_path / "w"),
+                                      "--workers", "1"]) == 0
+    assert month_files(dest, "2013-02") and not month_files(dest, "2013-01")
+
+
+def test_blob_check_only_lists_blobs():
+    """A container SAS may list blobs but not read container properties; check() must stay within that."""
+    from unittest import mock
+    from lichess_ingest.dest import BlobDest
+    d = BlobDest.__new__(BlobDest)
+    d.prefix, d.url = "bootstrap", "https://acct.blob.core.windows.net/lake/bootstrap"
+    d.container = mock.MagicMock()
+    d.container.list_blobs.return_value = iter([])
+    d.check()
+    d.container.list_blobs.assert_called_once()
+    d.container.exists.assert_not_called()
+    d.container.get_container_properties.assert_not_called()
+
+
+def test_placeholder_dest_is_rejected():
+    with pytest.raises(SystemExit, match="placeholder"):
+        cli.main(["--dest", "abfss://<container>@<account>.dfs.core.windows.net/bootstrap", "plan"])
+
+
 # --------------------------------------------------------------------------- destinations
 
 def test_open_dest_parses_urls(monkeypatch):
@@ -197,6 +232,9 @@ def test_end_to_end_against_azurite(lichess, tmp_path, monkeypatch):
     assert run(lichess, dest, tmp_path / "work", "--file-mb", "0.01") == 0
 
     d = open_dest(dest)
+    d.check()
+    with pytest.raises(FileNotFoundError):
+        open_dest(f"{blob_url}/missing{uuid.uuid4().hex[:8]}/x").check()
     m = d.get_json("_state/raw_games/2013-01.json")
     assert m["games"] == 1500
     assert d.list("raw/games/month=2013-01/") == [f["name"] for f in m["files"]]
