@@ -1,6 +1,6 @@
 # infra
 
-Terraform for the Lichess platform, in three stacks applied in order. Each has its
+Terraform for the Lichess platform, in four stacks applied in order. Each has its
 own state; `platform` and `compute` keep theirs in the account `bootstrap` creates.
 
 | Stack | Creates | State |
@@ -8,6 +8,7 @@ own state; `platform` and `compute` keep theirs in the account `bootstrap` creat
 | `bootstrap/` | State storage account, subscription budget | Local file `bootstrap/terraform.tfstate`; **back it up** |
 | `platform/` | Lake (ADLS Gen2), VNet and AKS subnet | `platform.tfstate` |
 | `compute/` | ACR, AKS (system + spot batch pool), managed identities | `compute.tfstate` |
+| `gitops/` | Argo CD + root app, `lichess` namespace / service account / config (needs `kubelogin`) | `gitops.tfstate` |
 
 First time only:
 
@@ -22,7 +23,7 @@ Then per stack:
 ```powershell
 cd infra\<stack>
 terraform init                                     # bootstrap
-terraform init "-backend-config=../state.tfbackend"  # platform, compute
+terraform init "-backend-config=../state.tfbackend"  # platform, compute, gitops
 terraform plan -out main.tfplan
 terraform apply main.tfplan
 ```

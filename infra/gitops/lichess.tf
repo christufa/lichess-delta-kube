@@ -1,0 +1,36 @@
+# Cluster-side glue that depends on Terraform outputs. It lives here rather than in
+# deploy/ so that no deployment-specific names or IDs end up in the public repo:
+# manifests in deploy/ refer to these objects by name only.
+
+resource "kubernetes_namespace_v1" "lichess" {
+  metadata {
+    name   = local.compute.jobs_namespace
+    labels = { "app.kubernetes.io/part-of" = "lichess" }
+  }
+}
+
+# Pods using this service account (plus the label azure.workload.identity/use=true)
+# sign in to Azure as id-lichess-jobs: lake read/write, no secrets.
+resource "kubernetes_service_account_v1" "jobs" {
+  metadata {
+    name      = local.compute.jobs_service_account
+    namespace = kubernetes_namespace_v1.lichess.metadata[0].name
+    annotations = {
+      "azure.workload.identity/client-id" = local.compute.jobs_identity_client_id
+    }
+  }
+}
+
+# Names jobs need, injected with envFrom: configMapRef: lichess-config.
+resource "kubernetes_config_map_v1" "lichess" {
+  metadata {
+    name      = "lichess-config"
+    namespace = kubernetes_namespace_v1.lichess.metadata[0].name
+  }
+  data = {
+    LICHESS_DEST     = local.platform.lichess_dest
+    LAKE_ACCOUNT     = local.platform.lake_account_name
+    LAKE_CONTAINER   = local.platform.lake_container_name
+    ACR_LOGIN_SERVER = local.compute.acr_login_server
+  }
+}

@@ -1,4 +1,4 @@
-# One small always-on node for cluster add-ons; all real work goes to a spot pool
+# One always-on node for cluster add-ons and the Argo control plane; all real work goes to a spot pool
 # that scales from 0. Idle cost is the system node, its disk and the load balancer.
 # https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/kubernetes_cluster
 resource "azurerm_kubernetes_cluster" "main" {
@@ -34,7 +34,7 @@ resource "azurerm_kubernetes_cluster" "main" {
     name                         = "system"
     vm_size                      = var.system_vm_size
     node_count                   = 1
-    only_critical_addons_enabled = true # taint: nothing but cluster add-ons runs here
+    only_critical_addons_enabled = false # also hosts Argo CD / Argo Workflows (infra/gitops); batch work stays on spot
     os_disk_size_gb              = 64
     vnet_subnet_id               = local.platform.aks_subnet_id
     temporary_name_for_rotation  = "systemtmp" # lets Terraform change the VM size without a rebuild

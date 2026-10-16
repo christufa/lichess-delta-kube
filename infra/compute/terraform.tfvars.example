@@ -6,6 +6,6 @@ state_resource_group_name  = "rg-<project>-tfstate"
 state_storage_account_name = "st<project>tf<suffix>"
 
 # Optional overrides
-# system_vm_size  = "Standard_D2as_v5"
+# system_vm_size  = "Standard_D4as_v5"
 # batch_vm_size   = "Standard_E8s_v5"
 # batch_max_nodes = 3
