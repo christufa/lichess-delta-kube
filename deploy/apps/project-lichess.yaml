@@ -1,0 +1,22 @@
+# Argo CD project for everything in this repository. Applications for the pipeline
+# (Argo Workflows, workflow templates, …) are added next to this file and use
+# `project: lichess`.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: lichess
+  namespace: argocd
+spec:
+  description: Lichess data platform (christufa/lichess-delta-kube)
+  sourceRepos:
+    - https://github.com/christufa/lichess-delta-kube.git
+    - https://argoproj.github.io/argo-helm
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: argo
+    - server: https://kubernetes.default.svc
+      namespace: lichess
+  # Charts like Argo Workflows install CRDs and cluster roles.
+  clusterResourceWhitelist:
+    - group: "*"
+      kind: "*"

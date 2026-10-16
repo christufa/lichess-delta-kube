@@ -10,9 +10,9 @@ variable "project" {
 }
 
 variable "system_vm_size" {
-  description = "VM size for the always-on system node (runs only cluster add-ons)"
+  description = "VM size for the always-on system node: cluster add-ons plus Argo CD and Argo Workflows"
   type        = string
-  default     = "Standard_D2as_v5" # 2 vCPU / 8 GB
+  default     = "Standard_D4as_v5" # 4 vCPU / 16 GB. Resizing rotates the pool via temporary_name_for_rotation
 }
 
 variable "batch_vm_size" {
