@@ -18,7 +18,8 @@ variable "system_vm_size" {
 variable "batch_vm_size" {
   description = "VM size for the spot batch pool (ingest jobs now, Spark executors later)"
   type        = string
-  default     = "Standard_E8as_v5" # 8 vCPU / 64 GB, memory-optimised for joins
+  default     = "Standard_E8s_v5" # 8 vCPU / 64 GB, memory-optimised for joins. Not every size is offered
+  # to every subscription: az aks / activity log errors list the allowed ones
 }
 
 variable "batch_max_nodes" {
