@@ -99,6 +99,11 @@ resource "azurerm_kubernetes_cluster_node_pool" "batch" {
   tags = local.tags
 
   lifecycle {
-    ignore_changes = [node_count] # the autoscaler owns this
+    ignore_changes = [
+      node_count, # the autoscaler owns this
+      # AKS adds this label to every spot pool itself; without this, every plan
+      # would try to remove it.
+      node_labels["kubernetes.azure.com/scalesetpriority"],
+    ]
   }
 }

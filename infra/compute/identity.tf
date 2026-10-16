@@ -35,12 +35,11 @@ resource "azurerm_role_assignment" "jobs_lake" {
 # Trust tokens that this cluster issues for exactly one service account.
 # https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/federated_identity_credential
 resource "azurerm_federated_identity_credential" "jobs" {
-  name                = "aks-${var.jobs_namespace}-${var.jobs_service_account}"
-  resource_group_name = azurerm_resource_group.compute.name
-  parent_id           = azurerm_user_assigned_identity.jobs.id
-  audience            = ["api://AzureADTokenExchange"]
-  issuer              = azurerm_kubernetes_cluster.main.oidc_issuer_url
-  subject             = "system:serviceaccount:${var.jobs_namespace}:${var.jobs_service_account}"
+  name                      = "aks-${var.jobs_namespace}-${var.jobs_service_account}"
+  user_assigned_identity_id = azurerm_user_assigned_identity.jobs.id
+  audience                  = ["api://AzureADTokenExchange"]
+  issuer                    = azurerm_kubernetes_cluster.main.oidc_issuer_url
+  subject                   = "system:serviceaccount:${var.jobs_namespace}:${var.jobs_service_account}"
 }
 
 # --- You ---------------------------------------------------------------------
