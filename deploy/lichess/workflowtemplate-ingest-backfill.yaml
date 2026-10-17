@@ -1,0 +1,75 @@
+# Backfill many months in parallel: one spot node per month, up to `parallelism`
+# at a time (4 = the batch pool's max_nodes = the 32 spot vCPU quota).
+#
+#   plan:  lichess-ingest plan --json  -> months in range that have no manifest yet
+#   month: ingest-month for each of them (fan-out with withParam)
+#
+# Months already being processed elsewhere (the PC, another workflow) are claimed
+# in the lake; their pods log "claimed by …; skipping" and finish quickly.
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: ingest-backfill
+  namespace: lichess
+spec:
+  entrypoint: backfill
+  parallelism: 4
+  activeDeadlineSeconds: 259200 # 3 days for the whole backfill
+  arguments:
+    parameters:
+      - name: months
+        value: ""
+        description: "range to backfill, e.g. '2017:2026' or '2020-01:2021-06' (empty = everything not done)"
+      - name: image-tag
+        value: main
+      - name: workers
+        value: "6"
+      - name: download
+        value: auto
+
+  # ingest-month's container mounts this volume; templates referenced from another
+  # WorkflowTemplate use the calling workflow's volumes.
+  volumes:
+    - name: work
+      emptyDir:
+        sizeLimit: 120Gi
+
+  templates:
+    - name: backfill
+      steps:
+        - - name: plan
+            template: plan
+            arguments:
+              parameters:
+                - { name: months, value: "{{workflow.parameters.months}}" }
+                - { name: image-tag, value: "{{workflow.parameters.image-tag}}" }
+        - - name: month
+            templateRef:
+              name: ingest-month
+              template: ingest
+            arguments:
+              parameters:
+                - { name: months, value: "{{item}}" }
+                - { name: image-tag, value: "{{workflow.parameters.image-tag}}" }
+                - { name: workers, value: "{{workflow.parameters.workers}}" }
+                - { name: download, value: "{{workflow.parameters.download}}" }
+            withParam: "{{steps.plan.outputs.result}}"
+            continueOn:
+              failed: true # one bad month shouldn't stop the others; re-run the backfill to retry it
+
+    - name: plan
+      inputs:
+        parameters:
+          - name: months
+          - name: image-tag
+          - name: registry
+            valueFrom:
+              configMapKeyRef: { name: lichess-config, key: ACR_LOGIN_SERVER }
+      container:
+        image: "{{inputs.parameters.registry}}/lichess-ingest:{{inputs.parameters.image-tag}}"
+        args: [--months, "{{inputs.parameters.months}}", plan, --json]
+        envFrom:
+          - configMapRef:
+              name: lichess-config
+        resources:
+          requests: { cpu: 100m, memory: 256Mi }

@@ -5,8 +5,8 @@
 #
 # Submit: deploy/examples/run-ingest-month.yaml, or "Submit" in the Argo UI.
 #
-# Never run the same month from two places at once (e.g. this and a local run):
-# each run deletes files under the month it doesn't recognise after committing.
+# Safe to run alongside other runners (the PC, ingest-backfill): each month is
+# claimed in the lake before it starts, and months claimed by someone else are skipped.
 apiVersion: argoproj.io/v1alpha1
 kind: WorkflowTemplate
 metadata:
@@ -25,6 +25,9 @@ spec:
       - name: workers
         value: "6"
         description: parser processes (the batch node has 8 vCPU)
+      - name: download
+        value: auto
+        description: torrent, http, or auto (torrent; the image ships aria2c)
 
   volumes:
     - name: work
@@ -38,6 +41,8 @@ spec:
           - name: months
           - name: image-tag
           - name: workers
+          - name: download
+            value: auto
           - name: registry
             valueFrom:
               configMapKeyRef: { name: lichess-config, key: ACR_LOGIN_SERVER }
@@ -57,6 +62,12 @@ spec:
           - /work
           - --workers
           - "{{inputs.parameters.workers}}"
+          - --download-method
+          - "{{inputs.parameters.download}}"
+          # Stable across retries of this step, so a retried pod reclaims its own month
+          # instead of waiting for the claim to expire.
+          - --owner
+          - "{{workflow.name}}-{{inputs.parameters.months}}"
         envFrom:
           - configMapRef:
               name: lichess-config # LICHESS_DEST (Terraform, infra/gitops)

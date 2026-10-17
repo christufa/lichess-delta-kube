@@ -23,9 +23,9 @@ variable "batch_vm_size" {
 }
 
 variable "batch_max_nodes" {
-  description = "Upper limit for the batch pool. It scales to 0 when idle"
+  description = "Upper limit for the batch pool (4 × 8 vCPU = the 32 spot vCPU quota). It scales to 0 when idle"
   type        = number
-  default     = 3
+  default     = 4
 }
 
 variable "batch_os_disk_gb" {

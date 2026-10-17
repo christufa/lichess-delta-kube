@@ -1,5 +1,7 @@
 import hashlib
+import os
 import random
+import sys
 import threading
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -88,6 +90,44 @@ class FakeLichess:
                                                       for m in sorted(self.months, key=lambda m: m[::-1])))
         (self.root / "sha256sums.txt").write_text("".join(f"{self.months[m]['sha']}  {self.months[m]['name']}\n"
                                                           for m in sorted(self.months)))
+
+
+@pytest.fixture(autouse=True)
+def _http_downloads_by_default(monkeypatch):
+    # CI runners and the Docker test stage may have a real aria2c; keep tests on HTTP
+    # unless a test opts into torrents explicitly.
+    monkeypatch.setenv("LICHESS_DOWNLOAD", "http")
+    monkeypatch.setenv("LICHESS_OWNER", "test-runner")
+
+
+FAKE_ARIA2C = """#!/usr/bin/env python3
+# Stand-in for aria2c: "downloads" <url>.torrent by fetching <url> into --dir.
+import os, sys, urllib.request
+args = sys.argv[1:]
+url, out_dir = args[0], args[args.index("--dir") + 1]
+if os.environ.get("FAKE_ARIA2_FAIL"):
+    print("[ERROR] no peers found")
+    sys.exit(7)
+assert url.endswith(".torrent"), url
+src = url[: -len(".torrent")]
+data = urllib.request.urlopen(src).read()
+with open(os.path.join(out_dir, src.rsplit("/", 1)[1]), "wb") as fh:
+    fh.write(data)
+print("[#a1b2c3 %dB/%dB(100%%) CN:3 SD:2 DL:5MiB]" % (len(data), len(data)))
+"""
+
+
+@pytest.fixture
+def fake_aria2c(tmp_path, monkeypatch):
+    if sys.platform == "win32":
+        pytest.skip("fake aria2c is a POSIX script")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    script = bin_dir / "aria2c"
+    script.write_text(FAKE_ARIA2C)
+    script.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+    return script
 
 
 @pytest.fixture
