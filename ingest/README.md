@@ -72,7 +72,8 @@ docker compose run --rm ingest run --max-months 5
 ```
 
 Progress is logged every 30 s per month (percent, ETA) plus overall months
-remaining. Each finished month is appended to `/work/runs.jsonl`:
+remaining. Each finished (or failed) month's record is written to the destination as
+`_state/runs/<run_id>/<month>.json` and appended to `/work/runs.jsonl`:
 
 ```powershell
 docker compose run --rm --entrypoint cat ingest /work/runs.jsonl > runs.jsonl

@@ -1,0 +1,16 @@
+# Not synced by Argo CD: submit by hand.
+#   kubectl create -n lichess -f deploy/examples/run-ingest-month.yaml
+# 2026-09 is the speed test from #47: a recent, large month the local bootstrap
+# won't reach for days, so the two never touch the same month.
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: ingest-month-
+  namespace: lichess
+spec:
+  workflowTemplateRef:
+    name: ingest-month
+  arguments:
+    parameters:
+      - name: months
+        value: "2026-09"

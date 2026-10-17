@@ -10,9 +10,11 @@ deploy/
     argo-workflows.yaml         Argo Workflows (Helm chart), wave 0
     lichess.yaml                the pipeline's own objects from deploy/lichess, wave 1
   lichess/                    WorkflowTemplates / CronWorkflows (namespace lichess)
-    workflowtemplate-lake-smoke.yaml
+    workflowtemplate-lake-smoke.yaml    end-to-end check: identity → lake
+    workflowtemplate-ingest-month.yaml  ingest months on a spot node
   examples/                   not synced; submit by hand
     run-lake-smoke.yaml
+    run-ingest-month.yaml
 ```
 
 Merging to `main` is the deployment: Argo CD polls the repo every few minutes and
@@ -43,8 +45,24 @@ Logs and outputs are archived to the lake under `argo/YYYY/MM/<workflow>/`.
 
 ```powershell
 kubectl create -n lichess -f deploy/examples/run-lake-smoke.yaml      # end-to-end check
+kubectl create -n lichess -f deploy/examples/run-ingest-month.yaml    # ingest 2026-09
 kubectl get workflows -n lichess
 ```
+
+### The ingest image
+
+`ingest-month` runs `lichess-ingest:<image-tag>` (default `main`) from the cluster's
+ACR. Until CI does it (#20), build and push it with ACR Tasks (builds in Azure, no
+local Docker push), from the repo root:
+
+```powershell
+$acr = terraform -chdir=infra/compute output -raw acr_login_server
+$sha = git rev-parse --short HEAD
+az acr build -r $acr.Split('.')[0] --target runtime -t "lichess-ingest:main" -t "lichess-ingest:$sha" ingest
+```
+
+Each month's run record (timings, download speed, row counts) is stored in the lake
+under `bootstrap/_state/runs/<run_id>/<month>.json`.
 
 The first login is `admin` with the password from `argocd-initial-admin-secret`.
 Change it, then delete that secret. Public URLs with Entra SSO: #45.

@@ -73,6 +73,10 @@ def test_ingests_months_with_manifests_and_lineage(lichess, tmp_path):
     assert not list((work / "src").glob("*.pgn.zst"))       # sources deleted after success
     records = [json.loads(l) for l in (work / "runs.jsonl").read_text().splitlines()]
     assert [r["status"] for r in records] == ["ok", "ok"]
+    # the same records are stored in the destination, one file per month
+    stored = sorted((dest / "_state" / "runs" / records[0]["run_id"]).glob("*.json"))
+    assert [p.stem for p in stored] == ["2013-01", "2013-02"]
+    assert json.loads(stored[0].read_text())["games"] == 3000
 
 
 def test_rerun_skips_done_months_without_downloading(lichess, tmp_path, capsys):
@@ -103,6 +107,8 @@ def test_count_mismatch_fails_without_manifest(lichess, tmp_path):
     assert not (dest / "_state" / "raw_games" / "2013-01.json").exists()
     record = json.loads((work / "runs.jsonl").read_text())
     assert record["status"] == "failed" and "Lichess publishes 301" in record["error"]
+    stored = json.loads((dest / "_state" / "runs" / record["run_id"] / "2013-01.json").read_text())
+    assert stored["status"] == "failed"   # failures are recorded in the destination too
 
 
 def test_checksum_mismatch_moves_file_aside(lichess, tmp_path):
@@ -111,7 +117,8 @@ def test_checksum_mismatch_moves_file_aside(lichess, tmp_path):
     with pytest.raises(SystemExit):
         run(lichess, dest, work)
     assert list((work / "src").glob("*.bad"))
-    assert not (dest / "_state").exists()
+    assert not (dest / "_state" / "raw_games").exists()   # no manifest: the month isn't done
+    assert not (dest / "raw").exists()                     # and no data was written
 
 
 def test_keep_going_continues_after_a_failed_month(lichess, tmp_path):
