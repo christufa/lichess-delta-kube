@@ -21,11 +21,16 @@ resource "kubernetes_service_account_v1" "jobs" {
   }
 }
 
-# Names jobs need, injected with envFrom: configMapRef: lichess-config.
+# Names jobs need, injected with envFrom: configMapRef: lichess-config. Workflow
+# parameters can read it too (valueFrom.configMapKeyRef), which Argo only allows for
+# ConfigMaps with the configmap-type=Parameter label.
 resource "kubernetes_config_map_v1" "lichess" {
   metadata {
     name      = "lichess-config"
     namespace = kubernetes_namespace_v1.lichess.metadata[0].name
+    labels = {
+      "workflows.argoproj.io/configmap-type" = "Parameter"
+    }
   }
   data = {
     LICHESS_DEST     = local.platform.lichess_dest
