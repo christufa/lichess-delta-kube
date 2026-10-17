@@ -9,6 +9,10 @@ services:
     env_file:
       - path: .env        # LICHESS_DEST and Azure credentials; see .env.example
         required: false
+    environment:
+      # Stable owner name for month claims, so a restarted local run reclaims its own
+      # months instead of waiting for them to expire (the container hostname is random).
+      LICHESS_OWNER: local-${COMPUTERNAME:-${HOSTNAME:-pc}}
     volumes:
       # Scratch for downloads and staging (named volume: fast, inside Docker's disk).
       - lichess-work:/work

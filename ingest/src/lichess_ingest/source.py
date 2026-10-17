@@ -1,8 +1,16 @@
-"""Lichess inventory (what months exist) and verified, resumable downloads."""
+"""Lichess inventory (what months exist) and verified, resumable downloads.
+
+Downloads use BitTorrent when aria2c is available (Lichess publishes a .torrent for
+every month and asks bulk downloaders to use them; many peers beat one throttled
+HTTP connection), and fall back to a resumable HTTPS download otherwise. Either way
+the file is checked against Lichess's sha256sums.txt before it is used.
+"""
 from __future__ import annotations
 
 import hashlib
 import os
+import shutil
+import subprocess
 import time
 import urllib.error
 import urllib.request
@@ -124,14 +132,82 @@ def _attempt(url: str, out: str, stats: dict, progress_every: float) -> None:
         raise ConnectionError(f"connection closed early at {os.path.getsize(out)} of {total} bytes")
 
 
-def download_verified(entry: MonthEntry, work_dir: str, retries: int = 5, progress_every: float = 30.0) -> tuple[str, dict]:
-    """Download (resuming any partial file) and verify sha256. Returns (path, stats)."""
+DOWNLOAD_METHODS = ("auto", "torrent", "http")
+TORRENT_STALL_S = 300  # give up on the swarm after this long without download progress
+
+
+def resolve_method(method: str) -> str:
+    if method == "auto":
+        return "torrent" if shutil.which("aria2c") else "http"
+    return method
+
+
+def _torrent(entry: MonthEntry, src_dir: str, out: str, stats: dict, progress_every: float) -> None:
+    """Download via the month's .torrent with aria2c; raise if it fails or stalls."""
+    aria2c = shutil.which("aria2c")
+    if not aria2c:
+        raise FileNotFoundError("aria2c not found on PATH")
+    cmd = [
+        aria2c, entry.url + ".torrent",
+        "--dir", src_dir,
+        "--follow-torrent=mem", "--seed-time=0",          # leech only; peers still get pieces while we download
+        "--continue=true", "--check-integrity=true",       # resume and verify pieces already on disk
+        "--file-allocation=none", "--auto-file-renaming=false", "--allow-overwrite=true",
+        f"--bt-stop-timeout={TORRENT_STALL_S}",           # no progress for this long -> exit non-zero
+        "--bt-max-peers=80", "--max-connection-per-server=4",
+        "--show-console-readout=false", f"--summary-interval={max(1, int(progress_every))}",
+        "--console-log-level=warn", "--download-result=hide", "--enable-color=false",
+        f"--user-agent={USER_AGENT}",
+    ]
+    log(f"{entry.month}: torrent download", torrent=entry.url + ".torrent")
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace")
+    tail: list[str] = []
+    for line in proc.stdout:
+        line = line.strip()
+        if not line:
+            continue
+        tail = (tail + [line])[-5:]
+        if line.startswith("[#"):          # summary: [#gid 1.2GiB/29GiB(4%) CN:44 SD:30 DL:25MiB ETA:18m]
+            log(f"download {entry.file}", aria2=line.strip("[]"))
+        elif "ERROR" in line or "WARN" in line or "Exception" in line:
+            log(f"{entry.month}: aria2c", "WARN", line=line)
+    code = proc.wait()
+    if code != 0 or not os.path.exists(out) or os.path.exists(out + ".aria2"):
+        raise RuntimeError(f"aria2c exited with {code}: {' | '.join(tail)}")
+    stats["downloaded_bytes"] = os.path.getsize(out) - stats.get("resumed_from_bytes", 0)
+
+
+def _discard_partial_torrent(out: str) -> None:
+    """A half-done torrent file has holes, so it can't be resumed over HTTP."""
+    if os.path.exists(out + ".aria2"):
+        for path in (out, out + ".aria2"):
+            if os.path.exists(path):
+                os.remove(path)
+
+
+def download_verified(entry: MonthEntry, work_dir: str, retries: int = 5, progress_every: float = 30.0,
+                      method: str = "auto") -> tuple[str, dict]:
+    """Download (resuming any partial file) and verify sha256. Returns (path, stats).
+
+    method: "torrent" (aria2c), "http", or "auto" (torrent if aria2c is installed).
+    A torrent that fails or stalls falls back to HTTPS.
+    """
     src_dir = os.path.join(work_dir, "src")
     os.makedirs(src_dir, exist_ok=True)
     out = os.path.join(src_dir, entry.file)
     stats: dict = {"resumed_from_bytes": os.path.getsize(out) if os.path.exists(out) else 0}
     t0 = time.perf_counter()
-    for attempt in range(1, retries + 2):
+    method = resolve_method(method)
+    stats["method"] = method
+    if method == "torrent":
+        try:
+            _torrent(entry, src_dir, out, stats, progress_every)
+        except (OSError, RuntimeError) as exc:
+            log(f"{entry.month}: torrent failed; falling back to HTTPS", "WARN", error=str(exc)[:300])
+            stats.update(method="http", torrent_error=str(exc)[:300])
+            _discard_partial_torrent(out)
+            stats["resumed_from_bytes"] = os.path.getsize(out) if os.path.exists(out) else 0
+    for attempt in range(1, retries + 2) if stats["method"] == "http" else ():
         try:
             _attempt(entry.url, out, stats, progress_every)
             break

@@ -12,9 +12,11 @@ deploy/
   lichess/                    WorkflowTemplates / CronWorkflows (namespace lichess)
     workflowtemplate-lake-smoke.yaml    end-to-end check: identity → lake
     workflowtemplate-ingest-month.yaml  ingest months on a spot node
+    workflowtemplate-ingest-backfill.yaml  fan out ingest-month over a range, 4 at a time
   examples/                   not synced; submit by hand
     run-lake-smoke.yaml
     run-ingest-month.yaml
+    run-ingest-backfill.yaml
 ```
 
 Merging to `main` is the deployment: Argo CD polls the repo every few minutes and
@@ -46,6 +48,7 @@ Logs and outputs are archived to the lake under `argo/YYYY/MM/<workflow>/`.
 ```powershell
 kubectl create -n lichess -f deploy/examples/run-lake-smoke.yaml      # end-to-end check
 kubectl create -n lichess -f deploy/examples/run-ingest-month.yaml    # ingest 2026-09
+kubectl create -n lichess -f deploy/examples/run-ingest-backfill.yaml # 2017–2026, 4 months at a time
 kubectl get workflows -n lichess
 ```
 
@@ -63,6 +66,18 @@ az acr build -r $acr.Split('.')[0] --target runtime -t "lichess-ingest:main" -t 
 
 Each month's run record (timings, download speed, row counts) is stored in the lake
 under `bootstrap/_state/runs/<run_id>/<month>.json`.
+
+### Downloads and parallel runners
+
+- **Torrents:** the image ships `aria2c`, so months are downloaded from Lichess's
+  per-month `.torrent` (many peers, and what Lichess asks bulk downloaders to use).
+  A swarm that makes no progress for 5 minutes falls back to HTTPS. Either way the
+  file is checked against Lichess's sha256 before parsing.
+- **Claims:** before a month starts, the runner creates
+  `bootstrap/_state/claims/raw_games/<month>.json` (atomic create-if-absent). Other
+  runners skip claimed months, so the PC, `ingest-month` and `ingest-backfill` can run
+  at the same time. Claims are released when the month finishes; a crashed runner's
+  claim expires after 8 h (`--claim-ttl-hours`).
 
 The first login is `admin` with the password from `argocd-initial-admin-secret`.
 Change it, then delete that secret. Public URLs with Entra SSO: #45.

@@ -1,0 +1,16 @@
+# Not synced by Argo CD: submit by hand.
+#   kubectl create -n lichess -f deploy/examples/run-ingest-backfill.yaml
+# Pick a range that doesn't overlap a local run you intend to keep going (claims make
+# overlap safe, but each side would just skip what the other is doing).
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: ingest-backfill-
+  namespace: lichess
+spec:
+  workflowTemplateRef:
+    name: ingest-backfill
+  arguments:
+    parameters:
+      - name: months
+        value: "2017:2026"
