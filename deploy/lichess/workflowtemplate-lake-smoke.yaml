@@ -1,0 +1,29 @@
+# End-to-end check of the workflow setup: a spot node starts, the pod signs in to
+# Azure as the jobs identity (no secrets), lists the month manifests in the lake,
+# and its log is archived to the lake. Submit from the UI or:
+#   kubectl create -n lichess -f deploy/examples/run-lake-smoke.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: lake-smoke
+  namespace: lichess
+spec:
+  entrypoint: list-manifests
+  templates:
+    - name: list-manifests
+      container:
+        image: mcr.microsoft.com/azure-cli:latest
+        envFrom:
+          - configMapRef:
+              name: lichess-config # LAKE_ACCOUNT, LAKE_CONTAINER, … (Terraform, infra/gitops)
+        command: [bash, -c]
+        args:
+          - |
+            set -euo pipefail
+            az login --service-principal -u "$AZURE_CLIENT_ID" -t "$AZURE_TENANT_ID" \
+              --federated-token "$(cat "$AZURE_FEDERATED_TOKEN_FILE")" -o none
+            echo "signed in as the jobs identity"
+            az storage fs file list -f "$LAKE_CONTAINER" --account-name "$LAKE_ACCOUNT" \
+              --path bootstrap/_state/raw_games --auth-mode login --query "[].name" -o tsv | tail -5
+        resources:
+          requests: { cpu: 500m, memory: 512Mi }

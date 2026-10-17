@@ -1,0 +1,10 @@
+# Not synced by Argo CD (outside deploy/apps and deploy/lichess): submit by hand.
+#   kubectl create -n lichess -f deploy/examples/run-lake-smoke.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: lake-smoke-
+  namespace: lichess
+spec:
+  workflowTemplateRef:
+    name: lake-smoke
