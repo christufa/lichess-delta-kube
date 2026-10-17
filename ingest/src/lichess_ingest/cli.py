@@ -4,13 +4,16 @@
   run    download → verify → parse → upload → manifest, oldest month first;
          re-running skips months already done, so it can be stopped and resumed
 
-Progress goes to stderr; each finished month is also appended to <work>/runs.jsonl.
+Progress goes to stderr; each finished month is also appended to <work>/runs.jsonl
+and written to the destination as _state/runs/<run_id>/<month>.json, so the history
+survives a container or pod that is thrown away afterwards.
 """
 from __future__ import annotations
 
 import argparse
 import json
 import os
+import socket
 import sys
 import time
 import traceback
@@ -20,6 +23,8 @@ from concurrent.futures import ThreadPoolExecutor
 from .dest import BlobDest, open_dest
 from .log import human_bytes, human_secs, log
 from .month import process_month, state_name
+
+RUNS_PREFIX = "_state/runs"
 from .source import DEFAULT_BASE_URL, download_verified, fetch_inventory, select_months
 
 
@@ -45,6 +50,14 @@ def cmd_plan(args) -> int:
     print(f"\n{len(rows) - len(todo)} done ({human_bytes(done_bytes)} Parquet), {len(todo)} to do "
           f"({sum(e.games for e in todo):,} games)", file=sys.stderr)
     return 0
+
+
+def _save_record(dest, record: dict) -> None:
+    """Best effort: a failure to store the run record must not fail or mask the month."""
+    try:
+        dest.put_json(f"{RUNS_PREFIX}/{record['run_id']}/{record['month']}.json", record)
+    except Exception as exc:  # noqa: BLE001
+        log(f"{record['month']}: could not store run record: {type(exc).__name__}: {exc}", "WARN")
 
 
 def cmd_run(args) -> int:
@@ -115,8 +128,10 @@ def cmd_run(args) -> int:
                     raise SystemExit(1)
             finally:
                 record["at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                record["host"] = os.environ.get("HOSTNAME") or socket.gethostname()
                 with open(report, "a") as fh:
                     fh.write(json.dumps(record, default=str) + "\n")
+                _save_record(dest, record)
             elapsed = time.perf_counter() - t_start
             left = len(todo) - i - 1
             log(f"progress: {i + 1}/{len(todo)} months", elapsed=human_secs(elapsed),

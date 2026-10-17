@@ -1,0 +1,67 @@
+# Ingest one or more Lichess months into the lake (raw Parquet + manifests), on a
+# spot batch node, signed in as the jobs identity (workload identity, no secrets).
+# Spot node, identity label, service account and log archiving come from the
+# controller's workflowDefaults (deploy/apps/argo-workflows.yaml).
+#
+# Submit: deploy/examples/run-ingest-month.yaml, or "Submit" in the Argo UI.
+#
+# Never run the same month from two places at once (e.g. this and a local run):
+# each run deletes files under the month it doesn't recognise after committing.
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: ingest-month
+  namespace: lichess
+spec:
+  entrypoint: ingest
+  activeDeadlineSeconds: 43200 # 12 h cap for the whole workflow
+  arguments:
+    parameters:
+      - name: months
+        description: "'2026-09', '2020', '2020-01:2020-12' or a comma-separated mix"
+      - name: image-tag
+        value: main
+        description: lichess-ingest image tag in the cluster's ACR
+      - name: workers
+        value: "6"
+        description: parser processes (the batch node has 8 vCPU)
+
+  volumes:
+    - name: work
+      emptyDir:
+        sizeLimit: 120Gi # downloads (~35 GB for the largest month) + Parquet staging
+
+  templates:
+    - name: ingest
+      inputs:
+        parameters:
+          - name: months
+          - name: image-tag
+          - name: workers
+          - name: registry
+            valueFrom:
+              configMapKeyRef: { name: lichess-config, key: ACR_LOGIN_SERVER }
+      # Retry when the pod is lost (spot eviction, node problems), not when the code
+      # fails: ingest is idempotent, so a retried month starts over cleanly.
+      retryStrategy:
+        limit: "3"
+        retryPolicy: OnError
+        backoff: { duration: 1m, factor: "2", maxDuration: 30m }
+      container:
+        image: "{{inputs.parameters.registry}}/lichess-ingest:{{inputs.parameters.image-tag}}"
+        args:
+          - --months
+          - "{{inputs.parameters.months}}"
+          - run
+          - --work
+          - /work
+          - --workers
+          - "{{inputs.parameters.workers}}"
+        envFrom:
+          - configMapRef:
+              name: lichess-config # LICHESS_DEST (Terraform, infra/gitops)
+        volumeMounts:
+          - { name: work, mountPath: /work }
+        resources:
+          requests: { cpu: "6", memory: 16Gi, ephemeral-storage: 100Gi }
+          limits: { memory: 48Gi }
