@@ -1,0 +1,81 @@
+# Argo Workflows, installed by Argo CD from the official Helm chart.
+# Controller and UI run on the system node; every workflow pod runs on the spot
+# batch pool as lichess-jobs (workload identity → lake), see workflowDefaults.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argo-workflows
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: lichess
+  source:
+    repoURL: https://argoproj.github.io/argo-helm
+    chart: argo-workflows
+    targetRevision: 2.0.13 # Argo Workflows v4.1.5
+    helm:
+      releaseName: argo-workflows
+      valuesObject:
+        crds:
+          install: true
+          keep: true
+          full: false # plain CRD manifests (no installer hook Job); applied server-side below
+
+        # Workflows run in the lichess namespace as lichess-jobs. Terraform (infra/gitops)
+        # creates that service account with the workload identity annotation; the chart
+        # only adds the Role/RoleBinding the workflow executor needs.
+        workflow:
+          serviceAccount:
+            create: false
+            name: lichess-jobs
+          rbac:
+            create: true
+
+        controller:
+          workflowNamespaces:
+            - lichess
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+          workflowDefaults:
+            spec:
+              serviceAccountName: lichess-jobs
+              podMetadata:
+                labels:
+                  azure.workload.identity/use: "true"
+              nodeSelector:
+                workload: batch
+              tolerations:
+                - key: kubernetes.azure.com/scalesetpriority
+                  operator: Equal
+                  value: spot
+                  effect: NoSchedule
+              # Logs and outputs go to the lake (default artifact repository in the
+              # lichess namespace, created by Terraform), so pods can be cleaned up.
+              podGC:
+                strategy: OnWorkflowSuccess
+              ttlStrategy:
+                secondsAfterCompletion: 604800 # keep finished workflows in the UI for 7 days
+
+        server:
+          # Reached only through `kubectl port-forward` (#45 for public access + SSO).
+          authModes: [server]
+          secure: false
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argo
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true # CRDs are too large for client-side apply annotations
+    retry:
+      limit: 5
+      backoff: { duration: 30s, factor: 2, maxDuration: 5m }

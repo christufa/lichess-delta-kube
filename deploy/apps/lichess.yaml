@@ -1,0 +1,29 @@
+# The pipeline's own objects (WorkflowTemplates, CronWorkflows) from deploy/lichess.
+# Synced after Argo Workflows, whose CRDs these objects need.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: lichess
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: lichess
+  source:
+    repoURL: https://github.com/christufa/lichess-delta-kube.git
+    targetRevision: main
+    path: deploy/lichess
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: lichess
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - SkipDryRunOnMissingResource=true # first sync may run before the Workflow CRDs exist
+    retry:
+      limit: 5
+      backoff: { duration: 30s, factor: 2, maxDuration: 5m }

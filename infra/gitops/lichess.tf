@@ -34,3 +34,28 @@ resource "kubernetes_config_map_v1" "lichess" {
     ACR_LOGIN_SERVER = local.compute.acr_login_server
   }
 }
+
+# Default artifact repository for workflows in this namespace: step outputs and
+# archived container logs go to the lake under argo/…, written by the workflow pods
+# themselves using workload identity (useSDKCreds → DefaultAzureCredential).
+# https://argo-workflows.readthedocs.io/en/latest/configure-artifact-repository/#configuring-azure-blob-storage
+resource "kubernetes_config_map_v1" "artifact_repositories" {
+  metadata {
+    name      = "artifact-repositories"
+    namespace = kubernetes_namespace_v1.lichess.metadata[0].name
+    annotations = {
+      "workflows.argoproj.io/default-artifact-repository" = "lake"
+    }
+  }
+  data = {
+    lake = yamlencode({
+      archiveLogs = true
+      azure = {
+        endpoint       = "https://${local.platform.lake_account_name}.blob.core.windows.net"
+        container      = local.platform.lake_container_name
+        blobNameFormat = "argo/{{workflow.creationTimestamp.Y}}/{{workflow.creationTimestamp.m}}/{{workflow.name}}/{{pod.name}}"
+        useSDKCreds    = true
+      }
+    })
+  }
+}
