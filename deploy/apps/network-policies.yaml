@@ -17,6 +17,9 @@ spec:
     path: deploy/network-policies
   destination:
     server: https://kubernetes.default.svc
+    # Argo CD checks this against the project's destinations, so it can't be empty; each
+    # policy sets its own namespace, and every one is checked against the project too.
+    namespace: lichess
   syncPolicy:
     automated:
       prune: true
