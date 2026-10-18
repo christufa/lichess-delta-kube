@@ -16,3 +16,23 @@ spec:
   ingress:
     - fromEndpoints:
         - {} # any pod in this namespace
+---
+# The Argo Workflows UI (chess-flows) is published through the Cloudflare Tunnel: let cloudflared reach it on its
+# container port. Cloudflare Access and cloudflared's token check sit in front.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-cloudflared
+  namespace: argo
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: argo-workflows-server
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: cloudflared
+            app.kubernetes.io/name: cloudflared
+      toPorts:
+        - ports:
+            - { port: "2746", protocol: TCP }

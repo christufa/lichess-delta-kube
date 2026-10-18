@@ -14,6 +14,18 @@ terraform {
       source  = "hashicorp/kubernetes"
       version = "~> 3.3"
     }
+    cloudflare = {
+      source  = "cloudflare/cloudflare"
+      version = "~> 5.27"
+    }
+    azuread = {
+      source  = "hashicorp/azuread"
+      version = "~> 3.10"
+    }
+    time = {
+      source  = "hashicorp/time"
+      version = "~> 0.13"
+    }
   }
 
   # Partial backend config, like platform and compute:

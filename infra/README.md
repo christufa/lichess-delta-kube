@@ -7,8 +7,8 @@ own state; `platform` and `compute` keep theirs in the account `bootstrap` creat
 |---|---|---|
 | `bootstrap/` | State storage account, subscription budget | Local file `bootstrap/terraform.tfstate`; **back it up** |
 | `platform/` | Lake (ADLS Gen2), VNet and AKS subnet | `platform.tfstate` |
-| `compute/` | ACR, AKS (system + spot batch pool), managed identities | `compute.tfstate` |
-| `gitops/` | Argo CD + root app, `lichess` namespace / service account / config (needs `kubelogin`) | `gitops.tfstate` |
+| `compute/` | ACR, AKS (system + spot batch pool), Key Vault, managed identities | `compute.tfstate` |
+| `gitops/` | Argo CD + root app, cluster facts, namespaces / service accounts / config; Cloudflare Tunnel + Access, DNS and Entra apps for `chess-*` (needs `kubelogin` and `CLOUDFLARE_API_TOKEN`) | `gitops.tfstate` |
 
 First time only:
 
@@ -26,6 +26,13 @@ terraform init                                     # bootstrap
 terraform init "-backend-config=../state.tfbackend"  # platform, compute, gitops
 terraform plan -out main.tfplan
 terraform apply main.tfplan
+```
+
+`gitops` also talks to Cloudflare. Set the API token in the shell first (never in a
+file):
+
+```powershell
+$env:CLOUDFLARE_API_TOKEN = "<token>"   # Zone DNS, Cloudflare Tunnel, Access (apps/policies, IdPs)
 ```
 
 **This repo is public.** Names and IDs specific to the deployment (subscription,
