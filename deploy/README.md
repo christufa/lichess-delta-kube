@@ -7,9 +7,17 @@ Everything in the cluster after Terraform's starting set (`infra/gitops`) is man
 deploy/
   apps/                       synced by the root Application ("app-of-apps")
     project-lichess.yaml        AppProject for this repo
+    project-platform.yaml       AppProject that may only create network policies
     argo-workflows.yaml         Argo Workflows (Helm chart), wave 0
     spark-operator.yaml         Kubeflow Spark Operator (Helm chart), wave 0
+    external-secrets.yaml       External Secrets Operator (Key Vault → Secrets), wave 0
+    kyverno.yaml                Kyverno (ApplicationSet: identity from cluster facts), wave 0
+    kyverno-policies.yaml       Pod Security Standards (restricted, audit), wave 1
+    platform.yaml               ApplicationSet → charts/platform with cluster facts, wave 1
     lichess.yaml                the pipeline's own objects from deploy/lichess, wave 1
+    network-policies.yaml       default-deny ingress everywhere (deploy/network-policies), wave 2
+  charts/platform/            ClusterSecretStore, image signature policy (values from cluster facts)
+  network-policies/           one CiliumNetworkPolicy per namespace
   lichess/                    WorkflowTemplates / CronWorkflows (namespace lichess)
     workflowtemplate-lake-smoke.yaml    end-to-end check: identity → lake
     workflowtemplate-ingest-month.yaml  ingest months on a spot node
@@ -24,6 +32,7 @@ deploy/
     run-ingest-backfill.yaml
     run-spark-smoke.yaml
     run-jupyter.yaml
+    netpol-check.yaml                   proves lichess is closed to other namespaces
 ```
 
 Merging to `main` is the deployment: Argo CD polls the repo every few minutes and

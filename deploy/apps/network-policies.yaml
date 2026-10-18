@@ -1,0 +1,26 @@
+# Default-deny ingress for every namespace we run (deploy/network-policies), synced last
+# so the namespaces exist. kube-system is left to AKS.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: network-policies
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: platform-security
+  source:
+    repoURL: https://github.com/christufa/lichess-delta-kube.git
+    targetRevision: main
+    path: deploy/network-policies
+  destination:
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    retry:
+      limit: 5
+      backoff: { duration: 30s, factor: 2, maxDuration: 5m }
