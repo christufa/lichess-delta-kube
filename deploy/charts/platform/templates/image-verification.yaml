@@ -1,0 +1,48 @@
+{{- if .Values.imageVerification.enabled }}
+# Our images (<registry>/lichess-*) must carry a cosign keyless signature made by this
+# repository's images workflow on main (.github/workflows/images.yml). Kyverno also
+# rewrites tags to the verified digest, so a pod runs exactly the bytes that were signed
+# even if :main moves later. Other images (Argo, Spark operator, …) are not matched.
+#
+# Kyverno reads ACR with workload identity (credentials provider "azure", AcrPull).
+# validationActions: [Audit] reports only; [Deny] blocks unsigned images.
+apiVersion: policies.kyverno.io/v1
+kind: ImageValidatingPolicy
+metadata:
+  name: verify-lichess-images
+spec:
+  validationActions: {{ toJson .Values.imageVerification.validationActions }}
+  failurePolicy: {{ .Values.imageVerification.failurePolicy }}
+  webhookConfiguration:
+    timeoutSeconds: 20
+  autogen:
+    podControllers:
+      controllers: [] # check pods only: digests in Deployment templates would fight Argo CD
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+  matchImageReferences:
+    - glob: {{ printf "%s/lichess-*" (required "acrLoginServer is required" .Values.acrLoginServer) | quote }}
+  credentials:
+    providers: [azure]
+  attestors:
+    - name: github
+      cosign:
+        keyless:
+          identities:
+            - issuer: https://token.actions.githubusercontent.com
+              subject: {{ .Values.imageVerification.signerIdentity | quote }}
+  validationConfigurations:
+    mutateDigest: true
+    verifyDigest: true
+    required: true
+  validations:
+    - message: >-
+        images from the cluster registry must be signed by
+        {{ .Values.imageVerification.signerIdentity }}
+      expression: >-
+        images.containers.map(image, verifyImageSignatures(image, [attestors.github])).all(e, e > 0)
+{{- end }}

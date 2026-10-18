@@ -1,0 +1,74 @@
+# Kyverno admission controller. An ApplicationSet (not a plain Application) so the
+# admission controller's service account can carry its workload identity client ID from
+# the cluster facts (infra/gitops/platform.tf) without putting it in git; that identity
+# reads ACR to verify image signatures.
+#
+# Policies: deploy/apps/kyverno-policies.yaml (Pod Security Standards) and
+# deploy/charts/platform (image signatures, needs the registry name).
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: kyverno
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - clusters:
+        selector:
+          matchLabels:
+            lichess.generops.dev/facts: "true"
+  template:
+    metadata:
+      name: kyverno
+      annotations:
+        argocd.argoproj.io/sync-wave: "0"
+    spec:
+      project: lichess
+      source:
+        repoURL: https://kyverno.github.io/kyverno
+        chart: kyverno
+        targetRevision: 3.9.1 # Kyverno 1.19.1
+        helm:
+          releaseName: kyverno
+          valuesObject:
+            admissionController:
+              replicas: 1 # single system node for now; 3 with a PDB once the pool autoscales
+              podLabels:
+                azure.workload.identity/use: "true"
+              rbac:
+                serviceAccount:
+                  name: kyverno-admission-controller
+                  annotations:
+                    azure.workload.identity/client-id: '{{ index .metadata.annotations "lichess.generops.dev/kyverno-client-id" }}'
+              container:
+                resources:
+                  requests: { cpu: 100m, memory: 256Mi }
+            backgroundController:
+              resources:
+                requests: { cpu: 50m, memory: 64Mi }
+            cleanupController:
+              resources:
+                requests: { cpu: 20m, memory: 64Mi }
+            reportsController:
+              resources:
+                requests: { cpu: 50m, memory: 128Mi }
+      destination:
+        server: '{{ .server }}'
+        namespace: kyverno
+      ignoreDifferences:
+        # Kyverno's aggregated ClusterRoles are filled in by the API server.
+        - group: rbac.authorization.k8s.io
+          kind: ClusterRole
+          jqPathExpressions: [.rules]
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true # large CRDs
+          - RespectIgnoreDifferences=true
+        retry:
+          limit: 5
+          backoff: { duration: 30s, factor: 2, maxDuration: 5m }

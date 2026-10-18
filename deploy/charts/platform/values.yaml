@@ -6,3 +6,10 @@ acrLoginServer: ""
 eso:
   namespace: external-secrets
   serviceAccount: eso-azure-kv
+
+# Signature check for our images (templates/image-verification.yaml).
+imageVerification:
+  enabled: true
+  validationActions: [Audit] # → [Deny] once reports show every lichess-* pod passes
+  failurePolicy: Ignore      # → Fail together with Deny
+  signerIdentity: https://github.com/christufa/lichess-delta-kube/.github/workflows/images.yml@refs/heads/main
