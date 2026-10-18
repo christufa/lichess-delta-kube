@@ -87,15 +87,19 @@ jobs:
       - name: Smoke test
         run: ${{ matrix.smoke }}
 
-      - name: Scan (fail on fixable critical vulnerabilities)
+      - name: Scan
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ env.IMAGE }}
           severity: CRITICAL
           ignore-unfixed: true
-          exit-code: "1"
-          format: table
+          format: json
+          output: trivy.json
+          exit-code: "0"
           trivyignores: .trivyignore
+
+      - name: Fail on fixable critical vulnerabilities
+        run: python3 .github/scripts/trivy_report.py trivy.json "${{ matrix.image }}"
 
       # ---- main only: publish ----
       - name: Azure sign-in (OIDC)
