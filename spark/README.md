@@ -65,7 +65,11 @@ games = spark.read.option("recursiveFileLookup", "true").parquet(f"{dest_root()}
 
 ## Building the images
 
-Until CI pushes images (#20), build in Azure with ACR Tasks, from the repo root:
+CI builds, tests, scans, signs and pushes `lichess-spark` and `lichess-notebook` on every
+merge to main (`.github/workflows/images.yml`), tagged `:<commit sha>` and `:main`.
+Workflows default to `image-tag=main`; pass a commit SHA to pin a run to an exact build.
+
+Manual fallback (ACR Tasks, from the repo root):
 
 ```powershell
 $acr = (terraform -chdir=infra/compute output -raw acr_login_server).Split('.')[0]

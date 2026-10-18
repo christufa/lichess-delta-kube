@@ -10,7 +10,9 @@
 ARG SPARK_IMAGE=apache/spark:4.1.3-scala2.13-java21-python3-ubuntu
 FROM ${SPARK_IMAGE} AS job
 
+# renovate: datasource=maven depName=org.apache.iceberg:iceberg-spark-runtime-4.1_2.13
 ARG ICEBERG_VERSION=1.12.0
+# renovate: datasource=maven depName=org.apache.hadoop:hadoop-azure
 ARG HADOOP_VERSION=3.4.2
 ARG MAVEN=https://repo1.maven.org/maven2
 

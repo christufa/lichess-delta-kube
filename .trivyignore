@@ -1,0 +1,2 @@
+# Vulnerabilities accepted after review, one ID per line with a reason and an expiry, e.g.
+# CVE-2099-0001  # in a jar Spark ships, not reachable from our jobs; recheck 2027-01-01

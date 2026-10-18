@@ -1,0 +1,50 @@
+// Renovate: dependency update PRs for everything in this repo.
+// Needs the Renovate GitHub App installed on the repository (https://github.com/apps/renovate).
+{
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  extends: [
+    "config:best-practices", // pins actions and base images by digest, among other things
+    ":dependencyDashboard",
+  ],
+  timezone: "America/New_York",
+  schedule: ["* 0-6 * * 1"], // early Monday
+  labels: ["dependencies"],
+  prConcurrentLimit: 6,
+  lockFileMaintenance: { enabled: true, schedule: ["* 0-6 1 * *"] },
+
+  // Helm charts referenced by Argo CD Applications.
+  argocd: { managerFilePatterns: ["/^deploy/apps/.+\\.ya?ml$/"] },
+
+  customManagers: [
+    {
+      // Versions in Dockerfile ARGs marked with a "# renovate:" comment.
+      customType: "regex",
+      managerFilePatterns: ["/(^|/)Dockerfile$/"],
+      matchStrings: [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\s+ARG [A-Z_]+=(?<currentValue>\\S+)",
+      ],
+    },
+  ],
+
+  packageRules: [
+    {
+      // Small, safe updates merge themselves once CI passes.
+      matchUpdateTypes: ["patch", "pin", "digest", "pinDigest"],
+      automerge: true,
+    },
+    { matchManagers: ["github-actions"], groupName: "GitHub Actions" },
+    { matchManagers: ["terraform"], groupName: "Terraform providers" },
+    {
+      // Spark, Iceberg's Spark runtime and hadoop-azure move together: Iceberg ships one
+      // runtime per Spark minor, and hadoop-azure must match Spark's bundled Hadoop.
+      // Patch updates are fine; minor/major updates are done by hand as one change.
+      matchPackageNames: ["apache/spark", "org.apache.iceberg:**", "org.apache.hadoop:**"],
+      matchUpdateTypes: ["major", "minor"],
+      enabled: false,
+    },
+    {
+      matchPackageNames: ["org.apache.hadoop:**"],
+      enabled: false, // pinned to the Hadoop version inside the Spark image
+    },
+  ],
+}

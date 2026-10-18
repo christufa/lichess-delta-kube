@@ -63,3 +63,9 @@ variable "state_container_name" {
   type        = string
   default     = "tfstate"
 }
+
+variable "github_repository" {
+  description = "owner/repo whose main-branch workflows may push images (GitHub OIDC subject)"
+  type        = string
+  default     = "christufa/lichess-delta-kube"
+}
