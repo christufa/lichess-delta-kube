@@ -1,0 +1,17 @@
+# Not synced by Argo CD: submit by hand.
+#   kubectl create -n lichess -f deploy/examples/run-spark-smoke.yaml
+# Reads raw/games from the lake with Spark and checks row counts against the manifests.
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: spark-smoke-
+  namespace: lichess
+spec:
+  workflowTemplateRef:
+    name: spark-job
+  arguments:
+    parameters:
+      - name: job
+        value: smoke_raw_counts
+      - name: executors
+        value: "2"

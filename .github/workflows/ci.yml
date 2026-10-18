@@ -113,3 +113,33 @@ jobs:
         run: |
           docker compose build
           docker compose run --rm ingest --help
+
+  spark:
+    name: spark helpers tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: spark
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pytest
+      - name: pytest (no Spark needed)
+        run: PYTHONPATH=. pytest -q
+
+  spark-docker:
+    name: spark image + local-mode smoke
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: spark
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t lichess-spark:test .
+      - name: Jars are in place
+        run: docker run --rm --entrypoint bash lichess-spark:test -c "ls /opt/spark/jars | grep -E 'iceberg-spark-runtime-4.1|iceberg-azure-bundle|hadoop-azure-3.4'"
+      - name: Smoke job in Spark local mode
+        run: docker run --rm --entrypoint /opt/spark/bin/spark-submit lichess-spark:test --master 'local[2]' /opt/lichess/tests/local_smoke.py

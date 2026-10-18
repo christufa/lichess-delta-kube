@@ -1,0 +1,48 @@
+# Kubeflow Spark Operator: runs SparkApplications in the lichess namespace.
+# Drivers and executors use the lichess-jobs service account (workload identity → lake);
+# the chart adds the RBAC a driver needs to create its executor pods.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: spark-operator
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: lichess
+  source:
+    repoURL: https://kubeflow.github.io/spark-operator
+    chart: spark-operator
+    targetRevision: 2.5.2
+    helm:
+      releaseName: spark-operator
+      valuesObject:
+        spark:
+          jobNamespaces: [lichess]
+          serviceAccount:
+            create: false        # Terraform (infra/gitops) owns lichess-jobs and its identity annotation
+            name: lichess-jobs
+          rbac:
+            create: true
+        controller:
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+        webhook:
+          enable: true           # applies pod fields (env, labels, tolerations…) to drivers/executors
+          resources:
+            requests: { cpu: 20m, memory: 64Mi }
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: spark-operator
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff: { duration: 30s, factor: 2, maxDuration: 5m }

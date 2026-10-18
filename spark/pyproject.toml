@@ -1,0 +1,16 @@
+# Only for running the unit tests outside the image (pytest -q in spark/); the image itself
+# copies lichess_spark/ and jobs/ as-is and uses the PySpark bundled with Spark.
+[project]
+name = "lichess-spark"
+version = "0.1.0"
+requires-python = ">=3.10"
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[tool.setuptools]
+packages = ["lichess_spark"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
