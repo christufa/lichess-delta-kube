@@ -15,7 +15,7 @@ resource "azurerm_federated_identity_credential" "ci_main" {
   user_assigned_identity_id = azurerm_user_assigned_identity.ci.id
   audience                  = ["api://AzureADTokenExchange"]
   issuer                    = "https://token.actions.githubusercontent.com"
-  subject                   = "repo:${var.github_repository}:ref:refs/heads/main"
+  subject                   = "repo:${var.github_oidc_repository}:ref:refs/heads/main"
 }
 
 resource "azurerm_role_assignment" "ci_acr" {
