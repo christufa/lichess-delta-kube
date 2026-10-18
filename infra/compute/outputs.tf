@@ -27,3 +27,14 @@ output "jobs_service_account" {
 output "get_credentials" {
   value = "az aks get-credentials -g ${azurerm_resource_group.compute.name} -n ${azurerm_kubernetes_cluster.main.name} && kubelogin convert-kubeconfig -l azurecli"
 }
+
+# GitHub repository secrets for .github/workflows/images.yml (IDs, not credentials):
+#   AZURE_CLIENT_ID = ci_client_id, ACR_NAME = acr_name,
+#   AZURE_TENANT_ID / AZURE_SUBSCRIPTION_ID from `az account show`
+output "ci_client_id" {
+  value = azurerm_user_assigned_identity.ci.client_id
+}
+
+output "acr_name" {
+  value = azurerm_container_registry.main.name
+}

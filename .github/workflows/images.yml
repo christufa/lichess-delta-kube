@@ -1,0 +1,149 @@
+# Container images, built the same way for every change:
+#   pull requests  build → test inside the image → Trivy scan          (nothing is pushed)
+#   main           the same, then push to ACR with SBOM + SLSA provenance attestations
+#                  and a cosign keyless signature
+#
+# Azure sign-in uses GitHub OIDC: Azure trusts this repo's workflow on main (federated
+# credential on id-lichess-ci, AcrPush only). No passwords or keys are stored anywhere.
+# Repository secrets hold only IDs: AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID, ACR_NAME.
+#
+# Tags: :<commit sha> (immutable) and :main (latest). Kyverno resolves tags to digests and
+# checks the signature at admission (#62), so the cluster runs exactly what CI built.
+name: images
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: images-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  PUBLISH: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+
+jobs:
+  image:
+    name: ${{ matrix.image }}
+    runs-on: ubuntu-24.04 # pinned: ubuntu-latest moves to 26.04; Renovate-free, bump deliberately
+    permissions:
+      contents: read
+      id-token: write # Azure OIDC sign-in and cosign keyless signing (used on main only)
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: lichess-ingest
+            context: ingest
+            target: runtime
+            pretest_target: test # unit tests run inside the image build
+            smoke: |
+              docker run --rm "$IMAGE" --help
+          - image: lichess-spark
+            context: spark
+            target: job
+            pretest_target: ""
+            smoke: |
+              docker run --rm --entrypoint bash "$IMAGE" -c "ls /opt/spark/jars | grep -E 'iceberg-spark-runtime-4.1|iceberg-azure-bundle|hadoop-azure-3.4'"
+              docker run --rm --entrypoint /opt/spark/bin/spark-submit "$IMAGE" --master 'local[2]' /opt/lichess/tests/local_smoke.py
+          - image: lichess-notebook
+            context: spark
+            target: notebook
+            pretest_target: ""
+            smoke: |
+              docker run --rm "$IMAGE" jupyter lab --version
+              docker run --rm "$IMAGE" python3 /opt/lichess/tests/local_notebook.py
+    env:
+      IMAGE: ${{ matrix.image }}:ci
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Tests inside the image
+        if: matrix.pretest_target != ''
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ${{ matrix.context }}
+          target: ${{ matrix.pretest_target }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          push: false
+
+      - name: Build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ${{ matrix.context }}
+          target: ${{ matrix.target }}
+          tags: ${{ env.IMAGE }}
+          load: true
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,scope=${{ matrix.image }},mode=max
+
+      - name: Smoke test
+        run: ${{ matrix.smoke }}
+
+      - name: Scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE }}
+          severity: CRITICAL
+          ignore-unfixed: true
+          format: json
+          output: trivy.json
+          exit-code: "0"
+          trivyignores: .trivyignore
+
+      - name: Fail on fixable critical vulnerabilities
+        run: python3 .github/scripts/trivy_report.py trivy.json "${{ matrix.image }}"
+
+      # ---- main only: publish ----
+      - name: Azure sign-in (OIDC)
+        if: env.PUBLISH == 'true'
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Registry sign-in
+        if: env.PUBLISH == 'true'
+        run: az acr login --name "${{ secrets.ACR_NAME }}"
+
+      - name: Push with SBOM and provenance
+        id: push
+        if: env.PUBLISH == 'true'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ${{ matrix.context }}
+          target: ${{ matrix.target }}
+          tags: |
+            ${{ secrets.ACR_NAME }}.azurecr.io/${{ matrix.image }}:${{ github.sha }}
+            ${{ secrets.ACR_NAME }}.azurecr.io/${{ matrix.image }}:main
+          push: true
+          sbom: true
+          provenance: mode=max
+          cache-from: type=gha,scope=${{ matrix.image }}
+
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        if: env.PUBLISH == 'true'
+
+      - name: Sign (cosign keyless, identity = this workflow on main)
+        if: env.PUBLISH == 'true'
+        env:
+          REF: ${{ secrets.ACR_NAME }}.azurecr.io/${{ matrix.image }}@${{ steps.push.outputs.digest }}
+        run: cosign sign --yes "$REF"
+
+      - name: Summary
+        if: env.PUBLISH == 'true'
+        run: |
+          {
+            echo "### ${{ matrix.image }}"
+            echo "- tags: \`${{ github.sha }}\`, \`main\`"
+            echo "- digest: \`${{ steps.push.outputs.digest }}\`"
+            echo "- signed by: \`${{ github.server_url }}/${{ github.repository }}/.github/workflows/images.yml@refs/heads/main\`"
+          } >> "$GITHUB_STEP_SUMMARY"

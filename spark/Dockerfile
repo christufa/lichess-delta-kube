@@ -10,11 +10,18 @@
 ARG SPARK_IMAGE=apache/spark:4.1.3-scala2.13-java21-python3-ubuntu
 FROM ${SPARK_IMAGE} AS job
 
+# renovate: datasource=maven depName=org.apache.iceberg:iceberg-spark-runtime-4.1_2.13
 ARG ICEBERG_VERSION=1.12.0
+# renovate: datasource=maven depName=org.apache.hadoop:hadoop-azure
 ARG HADOOP_VERSION=3.4.2
 ARG MAVEN=https://repo1.maven.org/maven2
 
 USER root
+# OS security updates on top of the base image (CI fails on fixable critical CVEs).
+RUN apt-get update && apt-get -y upgrade && rm -rf /var/lib/apt/lists/*
+# Derby only backs Spark's embedded Hive metastore, which we don't use (Iceberg REST catalog).
+RUN rm -f /opt/spark/jars/derby-*.jar
+
 ADD ${MAVEN}/org/apache/iceberg/iceberg-spark-runtime-4.1_2.13/${ICEBERG_VERSION}/iceberg-spark-runtime-4.1_2.13-${ICEBERG_VERSION}.jar /opt/spark/jars/
 ADD ${MAVEN}/org/apache/iceberg/iceberg-azure-bundle/${ICEBERG_VERSION}/iceberg-azure-bundle-${ICEBERG_VERSION}.jar /opt/spark/jars/
 ADD ${MAVEN}/org/apache/hadoop/hadoop-azure/${HADOOP_VERSION}/hadoop-azure-${HADOOP_VERSION}.jar /opt/spark/jars/

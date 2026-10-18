@@ -59,11 +59,15 @@ kubectl create -n lichess -f deploy/examples/run-ingest-backfill.yaml # 2017–2
 kubectl get workflows -n lichess
 ```
 
-### The ingest image
+### Images
 
-`ingest-month` runs `lichess-ingest:<image-tag>` (default `main`) from the cluster's
-ACR. Until CI does it (#20), build and push it with ACR Tasks (builds in Azure, no
-local Docker push), from the repo root:
+Workflows run images from the cluster's ACR: `lichess-ingest`, `lichess-spark`,
+`lichess-notebook`, tag `<image-tag>` (default `main`). CI builds them on every merge to
+main (`.github/workflows/images.yml`): tests inside the image, Trivy scan, push as
+`:<commit sha>` + `:main` with SBOM and provenance, cosign keyless signature. Pass a
+commit SHA as `image-tag` to pin a run to an exact build.
+
+Manual fallback (ACR Tasks, builds in Azure), from the repo root:
 
 ```powershell
 $acr = terraform -chdir=infra/compute output -raw acr_login_server
