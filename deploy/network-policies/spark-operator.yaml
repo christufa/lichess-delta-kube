@@ -1,0 +1,26 @@
+# Default-deny ingress for the spark-operator namespace (Cilium). Once a pod is selected by a policy
+# with an ingress section, everything not listed here is dropped. Egress is not restricted
+# (yet): lake, ACR, Entra, chart repos and the LLM provider are reached directly.
+#
+# Allowed in:
+#   - pods in spark-operator
+#   - the API server (mutating webhook for Spark pods)
+# `kubectl port-forward` enters the pod's network namespace through the kubelet and is not
+# subject to policy, so the UIs keep working.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: spark-operator
+spec:
+  endpointSelector: {}
+  ingress:
+    - fromEndpoints:
+        - {} # any pod in this namespace
+    - fromEntities: # admission webhooks: the API server reaches them through konnectivity
+        - kube-apiserver
+        - host
+        - remote-node
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system

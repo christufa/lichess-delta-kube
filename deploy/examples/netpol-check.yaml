@@ -1,0 +1,28 @@
+# Check the lichess default-deny from outside the namespace. Not synced by Argo CD.
+#   kubectl apply -f deploy/examples/netpol-check.yaml
+#   kubectl logs -n default netpol-check        → "blocked (as expected)"
+#   kubectl delete -f deploy/examples/netpol-check.yaml
+# Needs a running notebook (Service jupyter) or any pod behind a Service in lichess.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: netpol-check
+  namespace: default
+spec:
+  restartPolicy: Never
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    seccompProfile: { type: RuntimeDefault }
+  containers:
+    - name: check
+      image: curlimages/curl:8.17.0
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities: { drop: [ALL] }
+      command: [sh, -c]
+      args:
+        - >-
+          if curl -s -m 5 -o /dev/null http://jupyter.lichess.svc:4040;
+          then echo "REACHED lichess from default: policy not applied";
+          else echo "blocked (as expected)"; fi

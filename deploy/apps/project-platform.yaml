@@ -1,0 +1,23 @@
+# Argo CD project for cluster security objects that live in other projects' namespaces
+# (network policies). It can only create CiliumNetworkPolicies, in exactly these
+# namespaces, so it can't be used to deploy workloads there.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: platform-security
+  namespace: argocd
+spec:
+  description: Network policies for every namespace (christufa/lichess-delta-kube)
+  sourceRepos:
+    - https://github.com/christufa/lichess-delta-kube.git
+  destinations:
+    - { server: https://kubernetes.default.svc, namespace: lichess }
+    - { server: https://kubernetes.default.svc, namespace: argo }
+    - { server: https://kubernetes.default.svc, namespace: argocd }
+    - { server: https://kubernetes.default.svc, namespace: spark-operator }
+    - { server: https://kubernetes.default.svc, namespace: external-secrets }
+    - { server: https://kubernetes.default.svc, namespace: kyverno }
+  clusterResourceWhitelist: []
+  namespaceResourceWhitelist:
+    - group: cilium.io
+      kind: CiliumNetworkPolicy
