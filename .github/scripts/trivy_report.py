@@ -20,7 +20,8 @@ with open(os.environ.get("GITHUB_STEP_SUMMARY", os.devnull), "a") as out:
         out.write("| ID | package | installed | fixed in | where | title |\n|---|---|---|---|---|---|\n")
         for r in rows:
             out.write("| " + " | ".join(x.replace("|", "/") for x in r) + " |\n")
-for vid, pkg, inst, fixed, target, title in rows:
+print(f"::notice title=Trivy {image}::{len(rows)} fixable critical vulnerabilities (full table in the job summary)")
+for vid, pkg, inst, fixed, target, title in rows[:9]:  # GitHub shows 10 annotations per step
     print(f"::error title={vid} in {pkg}::{pkg} {inst} → {fixed} ({target}) {title}")
 print(f"{len(rows)} fixable critical vulnerabilities in {image}")
 sys.exit(1 if rows else 0)
