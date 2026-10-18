@@ -1,0 +1,17 @@
+# Not synced by Argo CD: submit by hand.
+#   kubectl create -n lichess -f deploy/examples/run-jupyter.yaml
+#   kubectl port-forward -n lichess svc/jupyter 8888 4040
+# Then http://localhost:8888/lab?token=<terraform -chdir=infra/gitops output -raw jupyter_token>
+# Stop: delete the workflow (or wait `hours`).
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: jupyter-
+  namespace: lichess
+spec:
+  workflowTemplateRef:
+    name: jupyter
+  arguments:
+    parameters:
+      - name: hours
+        value: "8"
