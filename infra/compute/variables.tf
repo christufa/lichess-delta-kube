@@ -70,8 +70,13 @@ variable "state_container_name" {
   default     = "tfstate"
 }
 
-variable "github_repository" {
-  description = "owner/repo whose main-branch workflows may push images (GitHub OIDC subject)"
+variable "github_oidc_repository" {
+  description = <<-EOT
+    The repository as it appears in GitHub OIDC subjects. This repo uses GitHub's
+    immutable-ID format, owner@<owner id>/repo@<repo id>, so a renamed or re-created
+    repository can't inherit the trust. The IDs are public (GitHub API). If sign-in
+    fails, the images workflow annotates the subject GitHub actually presents.
+  EOT
   type        = string
-  default     = "christufa/lichess-delta-kube"
+  default     = "christufa@215463783/lichess-delta-kube@1253954100"
 }
