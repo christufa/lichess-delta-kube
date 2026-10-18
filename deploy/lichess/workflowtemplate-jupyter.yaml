@@ -1,0 +1,89 @@
+# JupyterLab on demand, as a long-running workflow. The notebook kernel is a Spark driver
+# in client mode (lichess_spark.notebook_spark): executors start on the spot batch nodes
+# when a query needs them and go away after 5 idle minutes.
+#   pod        → system node (on-demand; a kernel on spot would lose your session)
+#   notebooks  → PVC jupyter-work, mounted as $HOME (/workspace)
+#   access     → kubectl port-forward -n lichess svc/jupyter 8888 4040, token from infra/gitops
+#
+# Stops itself after `hours`; delete the workflow to stop it earlier. One at a time (mutex).
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: jupyter
+  namespace: lichess
+spec:
+  entrypoint: jupyter
+  synchronization:
+    mutexes:
+      - name: jupyter
+  arguments:
+    parameters:
+      - name: hours
+        value: "8"
+        description: JupyterLab stops itself after this many hours
+      - name: max-executors
+        value: "4"
+        description: upper limit for executors (one spot batch node each, max 4 = spot quota)
+      - name: image-tag
+        value: main
+        description: tag of lichess-notebook (kernel) and lichess-spark (executors)
+  volumes:
+    - name: work
+      persistentVolumeClaim:
+        claimName: jupyter-work
+
+  templates:
+    - name: jupyter
+      inputs:
+        parameters:
+          - name: hours
+          - name: max-executors
+          - name: image-tag
+          - name: registry
+            valueFrom:
+              configMapKeyRef: { name: lichess-config, key: ACR_LOGIN_SERVER }
+      metadata:
+        labels:
+          app.kubernetes.io/name: jupyter # selected by Service jupyter
+          azure.workload.identity/use: "true"
+      nodeSelector:
+        kubernetes.azure.com/agentpool: system
+      securityContext:
+        fsGroup: 185 # the image's spark user: lets it write to the PVC
+      container:
+        image: "{{inputs.parameters.registry}}/lichess-notebook:{{inputs.parameters.image-tag}}"
+        imagePullPolicy: Always
+        command: [/opt/lichess/bin/start-jupyter.sh]
+        env:
+          - name: HOME
+            value: /workspace
+          - name: LICHESS_NOTEBOOK_HOURS
+            value: "{{inputs.parameters.hours}}"
+          - name: LICHESS_MAX_EXECUTORS
+            value: "{{inputs.parameters.max-executors}}"
+          - name: LICHESS_EXECUTOR_IMAGE
+            value: "{{inputs.parameters.registry}}/lichess-spark:{{inputs.parameters.image-tag}}"
+          - name: LICHESS_DRIVER_MEMORY
+            value: 2g
+          - name: POD_NAME
+            valueFrom: { fieldRef: { fieldPath: metadata.name } }
+          - name: POD_NAMESPACE
+            valueFrom: { fieldRef: { fieldPath: metadata.namespace } }
+          - name: POD_IP
+            valueFrom: { fieldRef: { fieldPath: status.podIP } }
+          - name: JUPYTER_TOKEN
+            valueFrom: { secretKeyRef: { name: jupyter, key: token } }
+        envFrom:
+          - configMapRef:
+              name: lichess-config
+        ports:
+          - { name: jupyter, containerPort: 8888 }
+          - { name: spark-ui, containerPort: 4040 }
+          - { name: driver, containerPort: 7078 }
+          - { name: blockmanager, containerPort: 7079 }
+        resources:
+          requests: { cpu: 500m, memory: 3Gi }
+          limits: { memory: 6Gi }
+        volumeMounts:
+          - name: work
+            mountPath: /workspace

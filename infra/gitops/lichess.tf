@@ -64,3 +64,18 @@ resource "kubernetes_config_map_v1" "artifact_repositories" {
     })
   }
 }
+
+# Token for JupyterLab (deploy/lichess/workflowtemplate-jupyter.yaml). Generated on the
+# first apply and then left alone; read it with: terraform output -raw jupyter_token
+resource "kubernetes_secret_v1" "jupyter" {
+  metadata {
+    name      = "jupyter"
+    namespace = kubernetes_namespace_v1.lichess.metadata[0].name
+  }
+  data = {
+    token = replace(uuid(), "-", "")
+  }
+  lifecycle {
+    ignore_changes = [data]
+  }
+}

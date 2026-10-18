@@ -143,3 +143,16 @@ jobs:
         run: docker run --rm --entrypoint bash lichess-spark:test -c "ls /opt/spark/jars | grep -E 'iceberg-spark-runtime-4.1|iceberg-azure-bundle|hadoop-azure-3.4'"
       - name: Smoke job in Spark local mode
         run: docker run --rm --entrypoint /opt/spark/bin/spark-submit lichess-spark:test --master 'local[2]' /opt/lichess/tests/local_smoke.py
+      - name: Build notebook image
+        run: docker build --target notebook -t lichess-notebook:test .
+      - name: Notebook kernel can run Spark (local mode, plain python3)
+        run: |
+          docker run --rm lichess-notebook:test jupyter lab --version
+          docker run --rm lichess-notebook:test python3 /opt/lichess/tests/local_notebook.py
+
+  notebooks:
+    name: notebooks have no outputs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 .github/scripts/check_notebooks.py

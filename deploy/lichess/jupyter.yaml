@@ -1,0 +1,26 @@
+# Storage and port-forward target for the jupyter workflow (workflowtemplate-jupyter.yaml).
+# The disk is created when the first notebook pod starts (until then Argo CD shows the
+# claim as Progressing). It is deleted with the cluster: commit notebooks you want to keep.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: jupyter-work
+  namespace: lichess
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: managed-csi
+  resources:
+    requests:
+      storage: 16Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jupyter
+  namespace: lichess
+spec:
+  selector:
+    app.kubernetes.io/name: jupyter
+  ports:
+    - { name: jupyter, port: 8888, targetPort: 8888 }
+    - { name: spark-ui, port: 4040, targetPort: 4040 }

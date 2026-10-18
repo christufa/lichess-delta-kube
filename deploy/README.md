@@ -15,12 +15,15 @@ deploy/
     workflowtemplate-ingest-month.yaml  ingest months on a spot node
     workflowtemplate-ingest-backfill.yaml  fan out ingest-month over a range, 4 at a time
     workflowtemplate-spark-job.yaml     run a PySpark job (spark/jobs) as a SparkApplication
+    workflowtemplate-jupyter.yaml       JupyterLab on demand; the kernel drives Spark executors on spot
+    jupyter.yaml                        its disk (PVC jupyter-work) and port-forward Service
     rbac-spark-submit.yaml              lets workflows create SparkApplications
   examples/                   not synced; submit by hand
     run-lake-smoke.yaml
     run-ingest-month.yaml
     run-ingest-backfill.yaml
     run-spark-smoke.yaml
+    run-jupyter.yaml
 ```
 
 Merging to `main` is the deployment: Argo CD polls the repo every few minutes and

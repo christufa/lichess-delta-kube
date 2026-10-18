@@ -1,0 +1,17 @@
+# Executor pods started by notebooks (Spark client mode, lichess_spark/notebook.py).
+# Same placement and identity as spark-job's executors: spot batch nodes, workload identity.
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    azure.workload.identity/use: "true"
+    app.kubernetes.io/part-of: lichess
+spec:
+  serviceAccountName: lichess-jobs
+  nodeSelector:
+    workload: batch
+  tolerations:
+    - key: kubernetes.azure.com/scalesetpriority
+      operator: Equal
+      value: spot
+      effect: NoSchedule
