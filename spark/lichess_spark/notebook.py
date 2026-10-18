@@ -63,6 +63,9 @@ def k8s_client_conf(env=None, max_executors: int | None = None) -> dict[str, str
         "spark.dynamicAllocation.executorIdleTimeout": "300s",
         "spark.dynamicAllocation.shuffleTracking.timeout": "1800s",
         "spark.kubernetes.executor.deleteOnTermination": "true",
+        # The Spark UI listens on the pod IP (Spark has no separate bind address for it):
+        # read-only, so other pods can't kill jobs from it.
+        "spark.ui.killEnabled": "false",
     }
 
 

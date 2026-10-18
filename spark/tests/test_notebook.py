@@ -36,6 +36,7 @@ def test_client_mode_in_cluster():
     assert conf["spark.kubernetes.executor.podTemplateFile"] == EXECUTOR_TEMPLATE
     assert conf["spark.dynamicAllocation.minExecutors"] == "0"
     assert conf["spark.dynamicAllocation.maxExecutors"] == "4"
+    assert conf["spark.ui.killEnabled"] == "false"
 
 
 def test_max_executors():

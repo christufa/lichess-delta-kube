@@ -1,4 +1,6 @@
 # Storage and port-forward target for the jupyter workflow (workflowtemplate-jupyter.yaml).
+# The Service only names the ports for `kubectl port-forward svc/jupyter`; JupyterLab itself
+# listens on 127.0.0.1, so connections through the Service's cluster IP are refused.
 # The disk is created when the first notebook pod starts (until then Argo CD shows the
 # claim as Progressing). It is deleted with the cluster: commit notebooks you want to keep.
 apiVersion: v1
