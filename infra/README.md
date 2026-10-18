@@ -51,8 +51,9 @@ Where to add your IP (portal):
 | State account (`st<project>tf…`) | Storage account → Networking → Firewall → Add your client IP | **Before** applying the bootstrap change that turns on Deny |
 | Lake (`st<project>lake…`) | Same | Right after `platform` is applied |
 | AKS `aks-lichess` | Kubernetes service → Networking → Set authorized IP ranges | Right after `compute` is applied; until then its API answers any IP (Entra ID sign-in still required) |
+| Key Vault (`kv-<project>-…`) | Key vault → Networking → Firewall → Add your client IP | Only when you set or read secret values; the cluster reaches it through the AKS subnet |
 
-When your IP changes, update the same three places. Signs of a stale IP:
+When your IP changes, update the same places. Signs of a stale IP:
 `terraform init/plan` fails reading state (403), ingest uploads fail with
 `AuthorizationFailure`, `kubectl` times out.
 

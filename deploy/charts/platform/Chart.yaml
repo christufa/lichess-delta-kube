@@ -1,0 +1,8 @@
+apiVersion: v2
+name: platform
+description: >-
+  Cluster-wide objects that need deployment-specific values (Key Vault URL, registry,
+  tenant). Values come from the Argo CD cluster secret written by infra/gitops,
+  through the `platform` ApplicationSet; nothing deployment-specific is in git.
+type: application
+version: 0.1.0

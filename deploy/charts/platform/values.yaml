@@ -1,0 +1,8 @@
+# Filled in by the `platform` ApplicationSet from the in-cluster Argo CD cluster secret
+# (infra/gitops/platform.tf). Empty values fail rendering on purpose.
+keyVaultUrl: ""
+tenantId: ""
+acrLoginServer: ""
+eso:
+  namespace: external-secrets
+  serviceAccount: eso-azure-kv

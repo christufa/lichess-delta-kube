@@ -80,3 +80,15 @@ variable "github_oidc_repository" {
   type        = string
   default     = "christufa@215463783/lichess-delta-kube@1253954100"
 }
+
+variable "eso_namespace" {
+  description = "Namespace of External Secrets Operator"
+  type        = string
+  default     = "external-secrets"
+}
+
+variable "eso_service_account" {
+  description = "Service account the Key Vault ClusterSecretStore signs in as (federated to id-<project>-eso)"
+  type        = string
+  default     = "eso-azure-kv"
+}
