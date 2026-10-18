@@ -1,6 +1,6 @@
 # Monthly budget for this project only: costs in the Lichess resource groups,
 # including the node resource group AKS creates for its VMs. Anything else in the
-# subscription (e.g. Databricks) isn't counted. Alerts only: Azure budgets never
+# subscription isn't counted. Alerts only: Azure budgets never
 # stop or delete anything. The hard limits are the spot pool's max_count (compute)
 # and your vCPU quotas.
 # https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/consumption_budget_subscription

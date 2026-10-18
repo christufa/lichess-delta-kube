@@ -5,16 +5,15 @@ monthly PGN dumps from [database.lichess.org](https://database.lichess.org/)
 are landed in Azure Data Lake Storage, parsed into Iceberg tables, and modeled
 for analysis. Batch work runs as containers on Azure Kubernetes Service.
 
-> The previous Databricks pipeline (Hugging Face Parquet → Unity Catalog Delta)
-> is preserved at the `databricks-final` tag.
-
 ## Status
 
-Planning and measurement. See [docs/ROADMAP.md](docs/ROADMAP.md) for the data
-flow, phases and layout, and the GitHub milestones for the issue-level plan.
+Running on AKS: GitOps (Argo CD), ingest workflows (Argo Workflows), Spark with
+JupyterLab, signed CI images, Key Vault + External Secrets and Kyverno policies.
+Next: network policies, the public entry on `chess-*.generops.dev`, the Iceberg
+catalog and tables, then Trino, the dashboard and the chat on the data.
 
-Current work: the ingestion spike — [`spike/pgn_timing`](spike/pgn_timing)
-times download, decompression, parsing and Iceberg commit for one real month.
+See [docs/ROADMAP.md](docs/ROADMAP.md) for the data flow, phases and layout, and
+the GitHub milestones for the issue-level plan.
 
 ## Decisions
 
