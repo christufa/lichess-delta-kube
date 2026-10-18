@@ -3,7 +3,9 @@
 # when a query needs them and go away after 5 idle minutes.
 #   pod        → system node (on-demand; a kernel on spot would lose your session)
 #   notebooks  → PVC jupyter-work, mounted as $HOME (/workspace)
-#   access     → kubectl port-forward -n lichess svc/jupyter 8888 4040, token from infra/gitops
+#   access     → kubectl port-forward -n lichess svc/jupyter 8888 4040, then http://localhost:8888
+#                JupyterLab listens on 127.0.0.1 inside the pod, so only a port-forward
+#                (your Entra sign-in + RBAC) reaches it: no token.
 #
 # Stops itself after `hours`; delete the workflow to stop it earlier. One at a time (mutex).
 apiVersion: argoproj.io/v1alpha1
@@ -71,8 +73,6 @@ spec:
             valueFrom: { fieldRef: { fieldPath: metadata.namespace } }
           - name: POD_IP
             valueFrom: { fieldRef: { fieldPath: status.podIP } }
-          - name: JUPYTER_TOKEN
-            valueFrom: { secretKeyRef: { name: jupyter, key: token } }
         envFrom:
           - configMapRef:
               name: lichess-config

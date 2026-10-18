@@ -41,10 +41,11 @@ costs only the system node you already pay for.
 ```powershell
 kubectl create -n lichess -f deploy/examples/run-jupyter.yaml
 kubectl port-forward -n lichess svc/jupyter 8888 4040
-terraform -chdir=infra/gitops output -raw jupyter_token
 ```
 
-Open `http://localhost:8888/lab?token=<token>` and start with `examples/getting-started.ipynb`.
+Open http://localhost:8888 and start with `examples/getting-started.ipynb`. There is no token:
+JupyterLab listens on 127.0.0.1 inside its pod, so the only way in is a port-forward, which
+needs your Entra sign-in and RBAC on the cluster.
 The Spark UI is at http://localhost:4040 while a session is running.
 
 ```python
@@ -54,7 +55,7 @@ games = spark.read.option("recursiveFileLookup", "true").parquet(f"{dest_root()}
 ```
 
 - **VS Code:** open a notebook from the repo, then *Select Kernel → Existing Jupyter Server →*
-  `http://localhost:8888/?token=<token>`. The file stays in your repo and the kernel runs in the cluster.
+  `http://localhost:8888`. The file stays in your repo and the kernel runs in the cluster.
 - **Stopping:** JupyterLab stops itself after `hours` (default 8). To stop sooner:
   `kubectl delete workflow -n lichess -l workflows.argoproj.io/workflow-template=jupyter`.
   Its executors go with it. Only one runs at a time.
