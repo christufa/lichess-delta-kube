@@ -1,0 +1,40 @@
+# Pod Security Standards as Kyverno CEL ValidatingPolicies (official kyverno-policies chart).
+# Profile "restricted" (includes "baseline"). Rollout: Audit first: violations show up as
+# PolicyReports (kubectl get policyreport -A) without blocking anything. Switching
+# validationFailureAction (or individual policies) to Enforce comes once reports are clean.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kyverno-policies
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: lichess
+  source:
+    repoURL: https://kyverno.github.io/kyverno
+    chart: kyverno-policies
+    targetRevision: 3.9.1
+    helm:
+      releaseName: kyverno-policies
+      valuesObject:
+        policyType: ValidatingPolicy
+        podSecurityStandard: restricted
+        validationFailureAction: Audit
+        failurePolicy: Ignore # audit-only for now; Fail together with Enforce
+        vpolExclude:
+          excludeNamespaces: [kube-system, kyverno]
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kyverno
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - SkipDryRunOnMissingResource=true # Kyverno's CRDs may not exist yet on first sync
+    retry:
+      limit: 10
+      backoff: { duration: 30s, factor: 2, maxDuration: 5m }

@@ -16,6 +16,7 @@ locals {
     "tenant-id"           = data.azurerm_client_config.current.tenant_id
     "eso-namespace"       = local.compute.eso_namespace
     "eso-service-account" = local.compute.eso_service_account
+    "kyverno-client-id"   = local.compute.kyverno_identity_client_id
   }
 }
 

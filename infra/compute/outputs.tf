@@ -58,3 +58,7 @@ output "eso_namespace" {
 output "eso_service_account" {
   value = var.eso_service_account
 }
+
+output "kyverno_identity_client_id" {
+  value = azurerm_user_assigned_identity.kyverno.client_id
+}

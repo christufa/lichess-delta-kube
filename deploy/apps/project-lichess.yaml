@@ -13,6 +13,7 @@ spec:
     - https://argoproj.github.io/argo-helm
     - https://kubeflow.github.io/spark-operator
     - https://charts.external-secrets.io
+    - https://kyverno.github.io/kyverno
   destinations:
     - server: https://kubernetes.default.svc
       namespace: argo
@@ -22,6 +23,8 @@ spec:
       namespace: spark-operator
     - server: https://kubernetes.default.svc
       namespace: external-secrets
+    - server: https://kubernetes.default.svc
+      namespace: kyverno
   # Charts like Argo Workflows install CRDs and cluster roles.
   clusterResourceWhitelist:
     - group: "*"
