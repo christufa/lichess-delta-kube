@@ -11,11 +11,14 @@ spec:
   sourceRepos:
     - https://github.com/christufa/lichess-delta-kube.git
     - https://argoproj.github.io/argo-helm
+    - https://kubeflow.github.io/spark-operator
   destinations:
     - server: https://kubernetes.default.svc
       namespace: argo
     - server: https://kubernetes.default.svc
       namespace: lichess
+    - server: https://kubernetes.default.svc
+      namespace: spark-operator
   # Charts like Argo Workflows install CRDs and cluster roles.
   clusterResourceWhitelist:
     - group: "*"

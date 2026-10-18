@@ -1,0 +1,99 @@
+# Run one PySpark job from the lichess-spark image as a SparkApplication and wait for it.
+#   driver    → system node (on-demand: a lost driver loses the whole job)
+#   executors → spot batch nodes (losing one only retries its tasks; decommissioning
+#               moves its shuffle blocks first)
+# Both sign in to the lake with workload identity; LICHESS_DEST etc. come from lichess-config.
+#
+# Submit: deploy/examples/run-spark-smoke.yaml, or "Submit" in the Argo UI.
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: spark-job
+  namespace: lichess
+spec:
+  entrypoint: spark
+  activeDeadlineSeconds: 43200
+  arguments:
+    parameters:
+      - name: job
+        description: script in spark/jobs without .py, e.g. smoke_raw_counts
+      - name: args
+        value: "[]"
+        description: 'JSON list of arguments for the script, e.g. ["--months", "2026-08"]'
+      - name: executors
+        value: "2"
+        description: executor pods; each takes one spot batch node (max 4 = spot quota)
+      - name: image-tag
+        value: main
+
+  templates:
+    - name: spark
+      inputs:
+        parameters:
+          - name: job
+          - name: args
+          - name: executors
+          - name: image-tag
+          - name: registry
+            valueFrom:
+              configMapKeyRef: { name: lichess-config, key: ACR_LOGIN_SERVER }
+      # The step itself only creates the SparkApplication and watches it; keep it off the spot pool.
+      nodeSelector:
+        kubernetes.azure.com/agentpool: system
+      resource:
+        action: create
+        setOwnerReference: true # deleting the workflow deletes the SparkApplication and its pods
+        successCondition: status.applicationState.state == COMPLETED
+        failureCondition: status.applicationState.state in (FAILED, SUBMISSION_FAILED)
+        manifest: |
+          apiVersion: sparkoperator.k8s.io/v1beta2
+          kind: SparkApplication
+          metadata:
+            generateName: "{{workflow.name}}-"
+            namespace: lichess
+          spec:
+            type: Python
+            pythonVersion: "3"
+            mode: cluster
+            sparkVersion: "4.1.3"
+            image: "{{inputs.parameters.registry}}/lichess-spark:{{inputs.parameters.image-tag}}"
+            imagePullPolicy: Always
+            mainApplicationFile: "local:///opt/lichess/jobs/{{inputs.parameters.job}}.py"
+            arguments: {{inputs.parameters.args}}
+            restartPolicy:
+              type: Never
+            timeToLiveSeconds: 86400
+            sparkConf:
+              spark.sql.adaptive.enabled: "true"
+              spark.serializer: org.apache.spark.serializer.KryoSerializer
+            driver:
+              serviceAccount: lichess-jobs
+              cores: 1
+              coreRequest: 500m
+              memory: 3g
+              labels:
+                azure.workload.identity/use: "true"
+              nodeSelector:
+                kubernetes.azure.com/agentpool: system
+              envFrom:
+                - configMapRef:
+                    name: lichess-config
+            executor:
+              serviceAccount: lichess-jobs
+              instances: {{inputs.parameters.executors}}
+              cores: 6
+              coreRequest: 5500m   # leaves room for node daemons on an 8 vCPU Standard_E8s_v5
+              memory: 40g
+              memoryOverhead: 6g
+              labels:
+                azure.workload.identity/use: "true"
+              nodeSelector:
+                workload: batch
+              tolerations:
+                - key: kubernetes.azure.com/scalesetpriority
+                  operator: Equal
+                  value: spot
+                  effect: NoSchedule
+              envFrom:
+                - configMapRef:
+                    name: lichess-config

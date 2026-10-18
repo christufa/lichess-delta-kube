@@ -8,15 +8,19 @@ deploy/
   apps/                       synced by the root Application ("app-of-apps")
     project-lichess.yaml        AppProject for this repo
     argo-workflows.yaml         Argo Workflows (Helm chart), wave 0
+    spark-operator.yaml         Kubeflow Spark Operator (Helm chart), wave 0
     lichess.yaml                the pipeline's own objects from deploy/lichess, wave 1
   lichess/                    WorkflowTemplates / CronWorkflows (namespace lichess)
     workflowtemplate-lake-smoke.yaml    end-to-end check: identity → lake
     workflowtemplate-ingest-month.yaml  ingest months on a spot node
     workflowtemplate-ingest-backfill.yaml  fan out ingest-month over a range, 4 at a time
+    workflowtemplate-spark-job.yaml     run a PySpark job (spark/jobs) as a SparkApplication
+    rbac-spark-submit.yaml              lets workflows create SparkApplications
   examples/                   not synced; submit by hand
     run-lake-smoke.yaml
     run-ingest-month.yaml
     run-ingest-backfill.yaml
+    run-spark-smoke.yaml
 ```
 
 Merging to `main` is the deployment: Argo CD polls the repo every few minutes and

@@ -48,6 +48,7 @@ Lichess .pgn.zst ─► landing (ADLS, unchanged) ─► raw.games (Iceberg) ─
 docs/        roadmap and architecture decision records (docs/adr/)
 spike/       throwaway measurement tools (spike/pgn_timing)
 ingest/      lichess-ingest: download, verify, parse and land raw Parquet in ADLS
+spark/       PySpark jobs and the Spark image (Spark 4.1, Iceberg 1.12, ABFS + workload identity)
 jobs/        Python jobs: Iceberg commits, curated builds (planned)
 infra/       Terraform: bootstrap (state, budget), platform (lake, network), compute (ACR, AKS), gitops (Argo CD)
 deploy/      Argo CD apps (GitOps): Argo Workflows, workflow templates
