@@ -15,6 +15,12 @@ variable "system_vm_size" {
   default     = "Standard_D4as_v5" # 4 vCPU / 16 GB. Resizing rotates the pool via temporary_name_for_rotation
 }
 
+variable "system_max_nodes" {
+  description = "Upper limit for the autoscaling system pool. Needs (max + 1 for node-image rotation) x 4 vCPU of DASv5 quota: 16 for 3"
+  type        = number
+  default     = 3
+}
+
 variable "batch_vm_size" {
   description = "VM size for the spot batch pool (ingest jobs now, Spark executors later)"
   type        = string
