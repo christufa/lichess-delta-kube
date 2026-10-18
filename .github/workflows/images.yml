@@ -30,7 +30,7 @@ env:
 jobs:
   image:
     name: ${{ matrix.image }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # pinned: ubuntu-latest moves to 26.04; Renovate-free, bump deliberately
     permissions:
       contents: read
       id-token: write # Azure OIDC sign-in and cosign keyless signing (used on main only)
