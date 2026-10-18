@@ -1,5 +1,7 @@
-# One always-on node for cluster add-ons and the Argo control plane; all real work goes to a spot pool
-# that scales from 0. Idle cost is the system node, its disk and the load balancer.
+# An on-demand system pool for cluster add-ons and the always-on services (Argo, Lakekeeper,
+# Trino coordinator, the web apps, ...): 1 node normally, up to system_max_nodes when their
+# requests need it. All batch work goes to a spot pool that scales from 0.
+# Idle cost is one system node, its disk and the load balancer.
 # https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/kubernetes_cluster
 resource "azurerm_kubernetes_cluster" "main" {
   name                = "aks-${var.project}"
@@ -33,8 +35,11 @@ resource "azurerm_kubernetes_cluster" "main" {
   default_node_pool {
     name                         = "system"
     vm_size                      = var.system_vm_size
+    auto_scaling_enabled         = true
+    min_count                    = 1
+    max_count                    = var.system_max_nodes
     node_count                   = 1
-    only_critical_addons_enabled = false # also hosts Argo CD / Argo Workflows (infra/gitops); batch work stays on spot
+    only_critical_addons_enabled = false # also hosts the always-on services; batch work stays on spot
     os_disk_size_gb              = 64
     vnet_subnet_id               = local.platform.aks_subnet_id
     temporary_name_for_rotation  = "systemtmp" # lets Terraform change the VM size without a rebuild
@@ -58,8 +63,10 @@ resource "azurerm_kubernetes_cluster" "main" {
     outbound_type       = "loadBalancer"
   }
 
-  # Remove idle batch nodes quickly; they cost money every minute they exist.
+  # Remove idle nodes quickly; they cost money every minute they exist. The system pool
+  # never goes below min_count = 1.
   auto_scaler_profile {
+    expander                   = "least-waste"
     scale_down_unneeded        = "5m"
     scale_down_delay_after_add = "5m"
   }
@@ -67,7 +74,10 @@ resource "azurerm_kubernetes_cluster" "main" {
   tags = local.tags
 
   lifecycle {
-    ignore_changes = [api_server_access_profile] # authorized IP ranges are set by hand in Azure
+    ignore_changes = [
+      api_server_access_profile,       # authorized IP ranges are set by hand in Azure
+      default_node_pool[0].node_count, # the autoscaler owns this
+    ]
   }
 
   depends_on = [azurerm_role_assignment.aks_network]
