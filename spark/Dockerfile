@@ -44,6 +44,9 @@ ENV PYTHONPATH=/opt/spark/python:/opt/spark/python/lib/py4j-src.zip \
     PYSPARK_PYTHON=python3
 COPY notebooks /opt/lichess/notebooks
 COPY bin/start-jupyter.sh /opt/lichess/bin/start-jupyter.sh
+# Built from Windows (az acr build uploads the working copy), the script arrives without
+# the executable bit and possibly with CRLF line endings: fix both.
+RUN sed -i 's/\r$//' /opt/lichess/bin/start-jupyter.sh && chmod 0755 /opt/lichess/bin/start-jupyter.sh
 USER spark
 EXPOSE 8888 4040
 ENTRYPOINT []

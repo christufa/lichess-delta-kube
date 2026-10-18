@@ -53,7 +53,7 @@ spec:
       container:
         image: "{{inputs.parameters.registry}}/lichess-notebook:{{inputs.parameters.image-tag}}"
         imagePullPolicy: Always
-        command: [/opt/lichess/bin/start-jupyter.sh]
+        command: [bash, /opt/lichess/bin/start-jupyter.sh]
         env:
           - name: HOME
             value: /workspace
