@@ -1,0 +1,12 @@
+# Default-deny ingress for cloudflared: it only makes outbound connections (to Cloudflare
+# and to the Services it fronts). Nothing needs to connect to it.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: cloudflared
+spec:
+  endpointSelector: {}
+  ingress:
+    - fromEndpoints:
+        - {} # any pod in this namespace

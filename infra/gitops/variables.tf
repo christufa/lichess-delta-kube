@@ -46,3 +46,38 @@ variable "argocd_apps_chart_version" {
   type        = string
   default     = "2.0.6"
 }
+
+# ---- Public entry (Cloudflare Tunnel + Access), #45 ----
+
+variable "domain" {
+  description = "Cloudflare zone the chess-* hostnames live in"
+  type        = string
+  default     = "generops.dev"
+}
+
+variable "hostname_prefix" {
+  description = "Prefix for every public hostname: <prefix>, <prefix>-cd, <prefix>-flows, …"
+  type        = string
+  default     = "chess"
+}
+
+variable "cloudflare_account_id" {
+  description = "Cloudflare account ID (zone Overview page, right sidebar)"
+  type        = string
+}
+
+variable "cloudflare_zone_id" {
+  description = "Zone ID of var.domain (zone Overview page, right sidebar)"
+  type        = string
+}
+
+variable "cloudflare_team_name" {
+  description = "Zero Trust team name: <team>.cloudflareaccess.com"
+  type        = string
+}
+
+variable "access_allowed_emails" {
+  description = "Who may sign in to the private hostnames (Argo CD, Argo Workflows, JupyterLab): your Entra sign-in email"
+  type        = list(string)
+}
+

@@ -35,3 +35,9 @@ provider "helm" {
     exec                   = local.kube.exec
   }
 }
+
+# Cloudflare: reads CLOUDFLARE_API_TOKEN from the environment (never put it in a file).
+provider "cloudflare" {}
+
+# Entra ID app registrations, as you (az login).
+provider "azuread" {}

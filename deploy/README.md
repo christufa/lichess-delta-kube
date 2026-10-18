@@ -15,7 +15,9 @@ deploy/
     kyverno-policies.yaml       Pod Security Standards (restricted, audit), wave 1
     platform.yaml               ApplicationSet → charts/platform with cluster facts, wave 1
     lichess.yaml                the pipeline's own objects from deploy/lichess, wave 1
+    cloudflared.yaml            Cloudflare Tunnel connector for chess-*.generops.dev, wave 1
     network-policies.yaml       default-deny ingress everywhere (deploy/network-policies), wave 2
+  cloudflared/                cloudflared Deployment (routes and Access live in infra/gitops/edge.tf)
   charts/platform/            ClusterSecretStore, image signature policy (values from cluster facts)
   network-policies/           one CiliumNetworkPolicy per namespace
   lichess/                    WorkflowTemplates / CronWorkflows (namespace lichess)
