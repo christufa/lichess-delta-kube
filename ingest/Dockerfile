@@ -6,7 +6,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     LICHESS_WORK=/work
 
-RUN useradd --create-home --uid 10001 ingest \
+# aria2c: BitTorrent downloads of the monthly files (falls back to HTTPS without it)
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends aria2 ca-certificates \
+ && rm -rf /var/lib/apt/lists/* \
+ && useradd --create-home --uid 10001 ingest \
  && mkdir /work && chown ingest:ingest /work
 
 WORKDIR /app

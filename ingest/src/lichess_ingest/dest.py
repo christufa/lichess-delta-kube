@@ -15,7 +15,16 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import time
 import urllib.parse
+
+
+def _claim_body(owner: str) -> dict:
+    return {"owner": owner, "at": time.time(), "at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+
+
+def _expired(data: dict, ttl_s: float) -> bool:
+    return time.time() - float(data.get("at", 0)) > ttl_s
 
 
 class LocalDest:
@@ -62,6 +71,27 @@ class LocalDest:
             os.remove(self._path(name))
         except FileNotFoundError:
             pass
+
+    # Claims: "I'm working on this month", so parallel runners never share a month.
+    def claim(self, name: str, owner: str, ttl_s: float) -> tuple[bool, dict | None]:
+        target = self._path(name)
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        try:
+            fd = os.open(target, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            current = self.get_json(name) or {}
+            if current.get("owner") != owner and not _expired(current, ttl_s):
+                return False, current
+            self.put_json(name, _claim_body(owner))  # ours already, or abandoned: take it over
+            return True, current
+        with os.fdopen(fd, "w") as fh:
+            json.dump(_claim_body(owner), fh)
+        return True, None
+
+    def release(self, name: str, owner: str) -> None:
+        current = self.get_json(name)
+        if current and current.get("owner") == owner:
+            self.delete(name)
 
 
 class BlobDest:
@@ -114,6 +144,46 @@ class BlobDest:
         try:
             self.container.delete_blob(self._name(name))
         except ResourceNotFoundError:
+            pass
+
+    def claim(self, name: str, owner: str, ttl_s: float) -> tuple[bool, dict | None]:
+        """Atomically create the claim blob; take it over only if it's ours or expired."""
+        from azure.core import MatchConditions
+        from azure.core.exceptions import ResourceExistsError, ResourceModifiedError, ResourceNotFoundError
+        blob = self.container.get_blob_client(self._name(name))
+        body = json.dumps(_claim_body(owner)).encode()
+        try:
+            blob.upload_blob(body, overwrite=False)
+            return True, None
+        except ResourceExistsError:
+            pass
+        try:
+            stream = blob.download_blob()
+            current, etag = json.loads(stream.readall()), stream.properties.etag
+        except ResourceNotFoundError:          # released in between: try once more from scratch
+            try:
+                blob.upload_blob(body, overwrite=False)
+                return True, None
+            except ResourceExistsError:
+                return False, None
+        if current.get("owner") != owner and not _expired(current, ttl_s):
+            return False, current
+        try:
+            blob.upload_blob(body, overwrite=True, etag=etag, match_condition=MatchConditions.IfNotModified)
+            return True, current
+        except ResourceModifiedError:           # someone else took it over first
+            return False, current
+
+    def release(self, name: str, owner: str) -> None:
+        from azure.core import MatchConditions
+        from azure.core.exceptions import ResourceModifiedError, ResourceNotFoundError
+        blob = self.container.get_blob_client(self._name(name))
+        try:
+            stream = blob.download_blob()
+            current, etag = json.loads(stream.readall()), stream.properties.etag
+            if current.get("owner") == owner:
+                blob.delete_blob(etag=etag, match_condition=MatchConditions.IfNotModified)
+        except (ResourceNotFoundError, ResourceModifiedError):
             pass
 
     def check(self) -> None:

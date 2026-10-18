@@ -15,6 +15,11 @@ download .pgn.zst (resumable) ─► verify sha256 ─► parse in parallel ─�
 The next month downloads while the current one parses. Re-running skips months
 that are done, so you can stop (Ctrl+C) and resume any time.
 
+**Downloads** use the month's `.torrent` when `aria2c` is installed (the Docker image
+has it), falling back to HTTPS. **Claims** in `_state/claims/` let several runners
+(this PC, Argo workflows on AKS) work through the same range without ever processing
+the same month twice.
+
 ## Output layout
 
 ```text
@@ -91,6 +96,9 @@ docker compose run --rm --entrypoint cat ingest /work/runs.jsonl > runs.jsonl
 | `--keep-going` | off | Continue with the next month after a failure |
 | `--force` | off | Re-ingest months that are already done |
 | `--keep-source` | off | Keep the downloaded `.pgn.zst` files |
+| `--download-method` | auto | `torrent` (aria2c), `http`, or `auto` = torrent when `aria2c` is installed; a stalled torrent falls back to HTTPS |
+| `--owner` | hostname | Name on month claims (`LICHESS_OWNER`); compose sets a stable one |
+| `--claim-ttl-hours` | 8 | After this, another runner's claim counts as abandoned |
 
 **Disk:** about `(1 + prefetch) × 35 GB` for downloads plus a few GB of staging.
 **Memory:** roughly `workers × (150 MB + 8 × chunk-mb)`, about 7 GB at the defaults.

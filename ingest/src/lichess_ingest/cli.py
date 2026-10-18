@@ -25,7 +25,16 @@ from .log import human_bytes, human_secs, log
 from .month import process_month, state_name
 
 RUNS_PREFIX = "_state/runs"
-from .source import DEFAULT_BASE_URL, download_verified, fetch_inventory, select_months
+CLAIMS_PREFIX = "_state/claims/raw_games"
+
+
+def claim_name(month: str) -> str:
+    return f"{CLAIMS_PREFIX}/{month}.json"
+
+
+def default_owner() -> str:
+    return os.environ.get("LICHESS_OWNER") or os.environ.get("HOSTNAME") or socket.gethostname()
+from .source import DEFAULT_BASE_URL, DOWNLOAD_METHODS, download_verified, fetch_inventory, resolve_method, select_months
 
 
 def _status(entry, dest) -> tuple[str, dict | None]:
@@ -42,6 +51,9 @@ def cmd_plan(args) -> int:
     entries = select_months(fetch_inventory(args.base_url), args.months)
     rows = [(e, *_status(e, dest)) for e in entries]
     todo = [e for e, st, _ in rows if st != "done"]
+    if args.json:  # machine-readable: the months still to do, e.g. for a workflow fan-out
+        print(json.dumps([e.month for e in todo]))
+        return 0
     print(f"{'month':8} {'status':8} {'games':>13} {'parquet':>10}")
     for e, st, state in rows:
         size = human_bytes(state["parquet_bytes"]) if state else ""
@@ -79,8 +91,11 @@ def cmd_run(args) -> int:
     if not todo:
         log("nothing to do: all selected months are done")
         return 0
+    method = resolve_method(args.download_method)
+    ttl_s = args.claim_ttl_hours * 3600
     log("starting", months=len(todo), first=todo[0].month, last=todo[-1].month,
-        games=f"{sum(e.games for e in todo):,}", workers=args.workers, prefetch=args.prefetch)
+        games=f"{sum(e.games for e in todo):,}", workers=args.workers, prefetch=args.prefetch,
+        download=method, owner=args.owner)
 
     os.makedirs(args.work, exist_ok=True)
     report = os.path.join(args.work, "runs.jsonl")
@@ -89,21 +104,47 @@ def cmd_run(args) -> int:
     t_start = time.perf_counter()
 
     # Download ahead of parsing so the network and CPUs stay busy at the same time.
+    # Each month is claimed in the destination before its download starts, so other
+    # runners (the PC, parallel workflow pods) skip it; claims are released when done.
     downloader = ThreadPoolExecutor(max_workers=1)
     pending = {}
+    held: set[str] = set()
+    skipped = 0
 
     def schedule(i):
         if i < len(todo) and i not in pending:
-            pending[i] = downloader.submit(download_verified, todo[i], args.work, args.retries, args.log_every)
+            month = todo[i].month
+            ok, other = dest.claim(claim_name(month), args.owner, ttl_s)
+            if not ok:
+                pending[i] = None
+                log(f"{month}: claimed by {other.get('owner') if other else 'another runner'} "
+                    f"since {other.get('at_utc') if other else '?'}; skipping", "WARN")
+                return
+            held.add(month)
+            pending[i] = downloader.submit(download_verified, todo[i], args.work, args.retries, args.log_every,
+                                           method)
+
+    def release(month):
+        if month in held:
+            held.discard(month)
+            try:
+                dest.release(claim_name(month), args.owner)
+            except Exception as exc:  # noqa: BLE001 — expires on its own after the TTL
+                log(f"{month}: could not release claim: {exc}", "WARN")
 
     for i in range(1 + args.prefetch):
         schedule(i)
     try:
         for i, entry in enumerate(todo):
-            record = {"month": entry.month, "run_id": run_id, "games_expected": entry.games}
+            fut = pending.pop(i)
+            if fut is None:  # another runner has it
+                skipped += 1
+                schedule(i + 1 + args.prefetch)
+                continue
+            record = {"month": entry.month, "run_id": run_id, "owner": args.owner, "games_expected": entry.games}
             src_path = None
             try:
-                src_path, dl = pending.pop(i).result()
+                src_path, dl = fut.result()
                 schedule(i + 1 + args.prefetch)
                 record["download"] = dl
                 manifest = process_month(
@@ -132,6 +173,7 @@ def cmd_run(args) -> int:
                 with open(report, "a") as fh:
                     fh.write(json.dumps(record, default=str) + "\n")
                 _save_record(dest, record)
+                release(entry.month)
             elapsed = time.perf_counter() - t_start
             left = len(todo) - i - 1
             log(f"progress: {i + 1}/{len(todo)} months", elapsed=human_secs(elapsed),
@@ -140,8 +182,12 @@ def cmd_run(args) -> int:
         log("interrupted; finished months are kept, re-run to continue", "WARN")
         downloader.shutdown(wait=False, cancel_futures=True)
         return 130
+    finally:
+        for month in list(held):  # prefetched but not processed (failure, Ctrl+C)
+            release(month)
     downloader.shutdown(wait=True)
-    log("finished", months=len(todo), failed=failures, elapsed=human_secs(time.perf_counter() - t_start))
+    log("finished", months=len(todo) - skipped, skipped_claimed=skipped, failed=failures,
+        elapsed=human_secs(time.perf_counter() - t_start))
     return 1 if failures else 0
 
 
@@ -170,6 +216,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="cmd", required=True)
 
     pl = sub.add_parser("plan", parents=[shared], help="show done / pending months")
+    pl.add_argument("--json", action="store_true", help="print only a JSON list of the months still to do")
     pl.set_defaults(fn=cmd_plan)
 
     r = sub.add_parser("run", parents=[shared], help="ingest pending months, oldest first")
@@ -187,6 +234,13 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--keep-going", action="store_true", help="continue with the next month after a failure")
     r.add_argument("--force", action="store_true", help="re-ingest months that are already done")
     r.add_argument("--no-parity-check", action="store_true")
+    r.add_argument("--download-method", choices=DOWNLOAD_METHODS, default=os.environ.get("LICHESS_DOWNLOAD", "auto"),
+                   help="torrent (aria2c), http, or auto = torrent when aria2c is installed (env LICHESS_DOWNLOAD)")
+    r.add_argument("--owner", default=default_owner(),
+                   help="name recorded on month claims; use a stable one so a restarted run can reclaim its "
+                        "own months (env LICHESS_OWNER, default the hostname)")
+    r.add_argument("--claim-ttl-hours", type=float, default=8.0,
+                   help="a claim older than this is considered abandoned (crashed runner) and can be taken over")
     r.set_defaults(fn=cmd_run)
     return p
 
