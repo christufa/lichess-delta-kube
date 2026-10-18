@@ -30,7 +30,7 @@ env:
 jobs:
   image:
     name: ${{ matrix.image }}
-    runs-on: ubuntu-24.04 # pinned: ubuntu-latest moves to 26.04; Renovate-free, bump deliberately
+    runs-on: ubuntu-24.04 # pinned: ubuntu-latest moves to 26.04; bump deliberately
     permissions:
       contents: read
       id-token: write # Azure OIDC sign-in and cosign keyless signing (used on main only)
@@ -102,13 +102,13 @@ jobs:
         run: python3 .github/scripts/trivy_report.py trivy.json "${{ matrix.image }}"
 
       # ---- main only: publish ----
-      - name: Azure sign-in (OIDC)
+      - name: Azure sign-in (GitHub OIDC)
         if: env.PUBLISH == 'true'
-        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        run: .github/scripts/azure_oidc_login.sh
 
       - name: Registry sign-in
         if: env.PUBLISH == 'true'
