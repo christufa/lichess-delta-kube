@@ -1,0 +1,47 @@
+# Generates the `platform` Application from the in-cluster Argo CD cluster secret, whose
+# annotations (written by infra/gitops/platform.tf) carry the deployment-specific values.
+# This keeps the Key Vault URL, registry and tenant out of the public repo.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: platform
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - clusters:
+        selector:
+          matchLabels:
+            lichess.generops.dev/facts: "true"
+  template:
+    metadata:
+      name: platform
+      annotations:
+        argocd.argoproj.io/sync-wave: "1"
+    spec:
+      project: lichess
+      source:
+        repoURL: https://github.com/christufa/lichess-delta-kube.git
+        targetRevision: main
+        path: deploy/charts/platform
+        helm:
+          valuesObject:
+            keyVaultUrl: '{{ index .metadata.annotations "lichess.generops.dev/key-vault-url" }}'
+            tenantId: '{{ index .metadata.annotations "lichess.generops.dev/tenant-id" }}'
+            acrLoginServer: '{{ index .metadata.annotations "lichess.generops.dev/acr-login-server" }}'
+            eso:
+              namespace: '{{ index .metadata.annotations "lichess.generops.dev/eso-namespace" }}'
+              serviceAccount: '{{ index .metadata.annotations "lichess.generops.dev/eso-service-account" }}'
+      destination:
+        server: '{{ .server }}'
+        namespace: external-secrets
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - SkipDryRunOnMissingResource=true # the ESO CRDs may not exist yet on first sync
+        retry:
+          limit: 10
+          backoff: { duration: 30s, factor: 2, maxDuration: 5m }
