@@ -46,6 +46,7 @@ deploy/
     netpol-check.yaml                   proves lichess is closed to other namespaces
     run-lakekeeper-bootstrap.yaml
     run-catalog-smoke.yaml              Spark creates/writes/reads an Iceberg table through Lakekeeper
+    run-register-raw-games.yaml         publish landed months into lake.raw.games (write-audit-publish)
 ```
 
 Merging to `main` is the deployment: Argo CD polls the repo every few minutes and

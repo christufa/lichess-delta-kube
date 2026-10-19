@@ -96,6 +96,20 @@ docker run --rm -it --env-file ingest/.env --entrypoint /opt/spark/bin/spark-sub
   --master 'local[*]' --driver-memory 32g /opt/lichess/jobs/smoke_raw_counts.py
 ```
 
+## raw.games (write-audit-publish)
+
+`jobs/register_raw_games.py` turns landed Parquet (`raw/games/month=…`, from lichess-ingest)
+into the Iceberg table **`lake.raw.games`**, one month at a time:
+
+1. write the month into a private branch (`audit_YYYY_MM`), replacing that month there;
+2. audit the branch: row count = the month's manifest, `Site` present, `Result` valid,
+   `month` column consistent;
+3. all pass: fast-forward `main` to the branch. Any failure: `main` is untouched.
+
+Readers never see an unchecked month; every check is stored in `lake.ops.dq_results`.
+`--pending` publishes every landed month that isn't in the table yet; re-publishing a month
+replaces it.
+
 ## Adding a job
 
 1. Add `jobs/<name>.py`. Build the session with `lichess_spark.get_spark("<name>")` and paths from `dest_root()`.
