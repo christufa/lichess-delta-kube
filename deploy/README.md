@@ -35,7 +35,7 @@ deploy/
   network-policies/           one CiliumNetworkPolicy per namespace (+ scrape and cloudflared allows)
   lichess/                    WorkflowTemplates / CronWorkflows (namespace lichess)
     workflowtemplate-lake-smoke.yaml    end-to-end check: identity → lake
-    workflowtemplate-ingest-month.yaml  ingest months on a spot node, then publish them into lake.raw.games
+    workflowtemplate-ingest-month.yaml  ingest months on a spot node, publish into lake.raw.games, build lake.curated.games
     workflowtemplate-ingest-backfill.yaml  fan out ingest-month over a range, 4 at a time
     workflowtemplate-spark-job.yaml     run a PySpark job (spark/jobs) as a SparkApplication
     workflowtemplate-jupyter.yaml       JupyterLab on demand; the kernel drives Spark executors on spot
@@ -53,6 +53,7 @@ deploy/
     run-lakekeeper-bootstrap.yaml
     run-catalog-smoke.yaml              Spark creates/writes/reads an Iceberg table through Lakekeeper
     run-register-raw-games.yaml         publish landed months into lake.raw.games (write-audit-publish)
+    run-curated-games.yaml              build lake.curated.games from raw (write-audit-publish)
     run-trino-smoke.yaml
 ```
 
