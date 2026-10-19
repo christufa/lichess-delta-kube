@@ -33,8 +33,11 @@ spec:
         args:
           - |
             set -euo pipefail
+            # --user must match the token's principal; the CLI otherwise sends the OS user
+            # (trino), which Trino treats as impersonation and denies.
             q() { trino --server https://trino.trino.svc.cluster.local:8443 \
                     --truststore-path /ca/ca.crt --access-token "$(cat /var/run/trino/token)" \
+                    --user lichess-jobs \
                     --output-format ALIGNED --execute "$1"; }
             q "SELECT current_user AS who_am_i"
             q "SHOW SCHEMAS FROM lake"
