@@ -69,7 +69,7 @@ def run():
     # 2013-01: good, with the unusual things curated must keep (not filter).
     jan = [game("2013-01", i) for i in range(40)]
     jan[1] = game("2013-01", 1, Result="*", Termination="Abandoned")       # unfinished
-    jan[2] = game("2013-01", 2, WhiteElo="3700", WhiteTitle="BOT")        # rating out of range, a bot
+    jan[2] = game("2013-01", 2, WhiteElo="4100", WhiteTitle="BOT")        # rating out of range, a bot
     jan[3] = game("2013-01", 3, WhiteElo="?", WhiteRatingDiff=None)       # unknown rating
     jan[4] = game("2013-01", 4, Termination="Something new")              # unknown termination
     jan[5] = game("2013-01", 5, Event="Rated Blitz tournament https://lichess.org/tournament/winter15")
@@ -83,8 +83,9 @@ def run():
     assert curated.pending_months(spark) == ["2013-01", "2013-02"], curated.pending_months(spark)
     c1 = {c.name: c for c in curated.build_month(spark, "2013-01")}
     assert wap.gate(list(c1.values())), c1
-    assert c1["game_id_unique"].observed == 1 and c1["rating_in_range"].observed == 1, c1
-    assert c1["result_decided"].observed == 1 and c1["termination_known"].observed == 1, c1
+    counted = {n: c.observed for n, c in c1.items() if not c.blocking}
+    assert counted == {"game_id_unique": 1, "rating_in_range": 1, "result_decided": 1, "termination_known": 1,
+                       "played_at_in_month": 0}, counted
     c2 = {c.name: c for c in curated.build_month(spark, "2013-02")}
     assert not wap.gate(list(c2.values())) and c2["time_control_parseable"].observed == 1, c2
 
@@ -97,7 +98,7 @@ def run():
 
     by_id = {r["game_id"]: r for r in games.where("NOT is_duplicate").collect()}
     assert by_id["01000001"]["result"] is None and by_id["01000000"]["result"] == "white"
-    assert by_id["01000002"]["white_elo"] == 3700 and by_id["01000002"]["white_is_bot"]
+    assert by_id["01000002"]["white_elo"] == 4100 and by_id["01000002"]["white_is_bot"]
     assert by_id["01000003"]["white_elo"] is None and by_id["01000003"]["white_rating_diff"] is None
     assert by_id["01000000"]["white_rating_diff"] == 12 and by_id["01000000"]["black_rating_diff"] == -12
     assert by_id["01000005"]["tournament_id"] == "winter15"
