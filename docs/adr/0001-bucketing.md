@@ -1,6 +1,6 @@
 # ADR 0001: Bucketing for curated tables
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-19
 - **Issue:** #8
 
@@ -44,7 +44,8 @@ Measured on `lake.raw.games` (Trino, 2026-10-19):
 Option 2:
 
 - `curated.player_games`: `PARTITIONED BY (month, bucket(16, player_id))`, sorted by
-  `player_id, played_at`. `player_id` is the lower-cased username, since Lichess
+  `player_id, played_at` within each month × bucket (hash distribution by partition, 512 MB
+  file target). `player_id` is the lower-cased username, since Lichess
   usernames are case-insensitive. The username as written stays in `player`.
 - `curated.games`: `PARTITIONED BY (month)`, sorted by `game_id` (as built in #25). No bucket.
 - Any future player-keyed curated or gold table uses `bucket(16, player_id)` too, so it can
@@ -82,6 +83,18 @@ spark.sql.sources.v2.bucketing.partiallyClusteredDistribution.enabled=true
 ## Evidence
 
 - The skew measurements above (`approx_distinct`, `approx_most_frequent` on `lake.raw.games`).
-- **To fill in after the first build:** bytes per row and file sizes of `player_games`
-  for 2026-09 (`SELECT partition, file_count, total_data_file_size_in_bytes FROM
-  lake.curated."player_games$partitions"`).
+- **Measured after the first build** (2026-10-19, `lake.curated."player_games$files"`):
+
+  | Month | Rows | Size | Bytes/row | Files as first written |
+  |---|---|---|---|---|
+  | 2015-12 | 8.3 M | 0.20 GB | 24.4 | 28, 7 MB avg |
+  | 2026-08 | 184 M | 6.02 GB | 32.7 | 115, 52 MB avg |
+  | 2026-09 | 179 M | 5.87 GB | 32.8 | 115, 51 MB avg |
+
+  Rows are ~33 bytes, not the ~25 estimated, so a recent month is ~6 GB and **a bucket is
+  ~370 MB**: inside 256 MB–1 GB, with room for ~2.7× growth. **N = 16 stands.**
+- The first build wrote 115 small files per month because `WRITE ORDERED BY` uses range
+  distribution (one month's sort split across ~200 tasks). Fixed with
+  `WRITE DISTRIBUTED BY PARTITION LOCALLY ORDERED BY player_id, played_at` (one task per
+  month × bucket) and a 512 MB file target, so each bucket of a recent month is one file;
+  existing files compacted with `rewrite_data_files` (sort strategy).
