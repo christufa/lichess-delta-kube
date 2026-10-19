@@ -2,7 +2,8 @@
 
     source  lake.curated.games (main), pinned to one snapshot per build
     table   lake.curated.player_games   partitioned by (month, bucket(16, player_id)),
-                                        sorted by player_id, played_at (ADR 0001)
+                                        one task and file per (month, bucket), sorted
+                                        by player_id, played_at inside it (ADR 0001)
 
 Like curated.games, nothing is filtered: every game gives exactly one white and one black
 row, duplicates included (is_duplicate is carried over). `player_id` is the lower-cased
@@ -22,6 +23,10 @@ from .wap import Check
 
 TABLE = "lake.curated.player_games"
 BUCKETS = 16  # ADR 0001
+# One task per (month, bucket), sorted inside it: a bucket of a big month (~370 MB) becomes
+# one file. Range distribution (plain WRITE ORDERED BY) split 2026-09 into 115 files of ~50 MB.
+TARGET_FILE_BYTES = 512 * 1024 * 1024
+LAYOUT = "WRITE DISTRIBUTED BY PARTITION LOCALLY ORDERED BY player_id, played_at"
 OUTCOMES = {"white": ("win", "loss"), "black": ("loss", "win"), "draw": ("draw", "draw")}  # result → (white, black)
 SCORES = {"win": 1.0, "draw": 0.5, "loss": 0.0}
 
@@ -99,12 +104,22 @@ def ensure_tables(spark, sample_df) -> None:
             TBLPROPERTIES (
               'format-version' = '2',
               'write.parquet.compression-codec' = 'zstd',
-              'write.target-file-size-bytes' = '268435456',
+              'write.target-file-size-bytes' = '{TARGET_FILE_BYTES}',
               'comment' = 'Two rows per curated game, one per player (player_id = lower-cased username). Partitioned by month and bucket({BUCKETS}, player_id), sorted by player_id, played_at.'
             )""")
-        spark.sql(f"ALTER TABLE {TABLE} WRITE ORDERED BY player_id, played_at")
+    ensure_layout(spark)
     wap.ensure_main(spark, TABLE, sample_df.schema)
     wap.ensure_dq_table(spark)
+
+
+def ensure_layout(spark) -> None:
+    """Hash distribution by partition and the file size target, on new and existing tables
+    (only altered when they differ, so builds don't add a metadata commit each time)."""
+    props = {r[0]: r[1] for r in spark.sql(f"SHOW TBLPROPERTIES {TABLE}").collect()}
+    if props.get("write.distribution-mode") != "hash":
+        spark.sql(f"ALTER TABLE {TABLE} {LAYOUT}")
+    if props.get("write.target-file-size-bytes") != str(TARGET_FILE_BYTES):
+        spark.sql(f"ALTER TABLE {TABLE} SET TBLPROPERTIES ('write.target-file-size-bytes' = '{TARGET_FILE_BYTES}')")
 
 
 def branch_stats(spark, branch: str, month: str) -> dict:

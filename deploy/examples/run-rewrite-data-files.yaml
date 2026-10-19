@@ -1,0 +1,20 @@
+# Not synced by Argo CD: compact one table's data files (Iceberg rewrite_data_files, sort strategy).
+#   kubectl create -n lichess -f deploy/examples/run-rewrite-data-files.yaml
+# Tables built from it rebuild the rewritten months on their next --pending run
+# (for curated.player_games: run deploy/examples/run-gold.yaml afterwards).
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: rewrite-data-files-
+  namespace: lichess
+spec:
+  workflowTemplateRef:
+    name: spark-job
+  arguments:
+    parameters:
+      - name: job
+        value: rewrite_data_files
+      - name: args
+        value: '["--table", "curated.player_games"]'
+      - name: executors
+        value: "2"
