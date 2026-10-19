@@ -70,3 +70,7 @@ output "prometheus_query_endpoint" {
 output "grafana_identity_client_id" {
   value = azurerm_user_assigned_identity.grafana.client_id
 }
+
+output "lakekeeper_identity_client_id" {
+  value = azurerm_user_assigned_identity.lakekeeper.client_id
+}

@@ -16,11 +16,15 @@ deploy/
     platform.yaml               ApplicationSet → charts/platform with cluster facts, wave 1
     lichess.yaml                the pipeline's own objects from deploy/lichess, wave 1
     cloudflared.yaml            Cloudflare Tunnel connector for chess-*.generops.dev, wave 1
+    cnpg.yaml                   CloudNativePG operator (Postgres), wave 0
+    lakekeeper-db.yaml          Lakekeeper's Postgres cluster + encryption key (deploy/lakekeeper), wave 1
+    lakekeeper.yaml             Lakekeeper, the Iceberg REST catalog (ApplicationSet: identity from facts), wave 2
     grafana.yaml                Grafana for chess-grafana (ApplicationSet: identity, workspace URL from facts), wave 1
     project-observability.yaml  AppProject that may only create PodMonitors/ServiceMonitors
     monitoring.yaml             PodMonitors for Azure Managed Prometheus (deploy/monitoring), wave 2
     network-policies.yaml       default-deny ingress everywhere (deploy/network-policies), wave 2
   cloudflared/                cloudflared Deployment (routes and Access live in infra/gitops/edge.tf)
+  lakekeeper/                 CloudNativePG Cluster for the catalog, generated encryption key
   charts/platform/            ClusterSecretStore, image signature policy (values from cluster facts)
   monitoring/                 PodMonitors (Argo Workflows, Argo CD, cloudflared)
   network-policies/           one CiliumNetworkPolicy per namespace (+ scrape and cloudflared allows)
@@ -30,6 +34,7 @@ deploy/
     workflowtemplate-ingest-backfill.yaml  fan out ingest-month over a range, 4 at a time
     workflowtemplate-spark-job.yaml     run a PySpark job (spark/jobs) as a SparkApplication
     workflowtemplate-jupyter.yaml       JupyterLab on demand; the kernel drives Spark executors on spot
+    workflowtemplate-lakekeeper-bootstrap.yaml  one-time catalog setup: bootstrap + warehouse "lichess"
     jupyter.yaml                        its disk (PVC jupyter-work) and port-forward Service
     rbac-spark-submit.yaml              lets workflows create SparkApplications
   examples/                   not synced; submit by hand
@@ -39,6 +44,8 @@ deploy/
     run-spark-smoke.yaml
     run-jupyter.yaml
     netpol-check.yaml                   proves lichess is closed to other namespaces
+    run-lakekeeper-bootstrap.yaml
+    run-catalog-smoke.yaml              Spark creates/writes/reads an Iceberg table through Lakekeeper
 ```
 
 Merging to `main` is the deployment: Argo CD polls the repo every few minutes and

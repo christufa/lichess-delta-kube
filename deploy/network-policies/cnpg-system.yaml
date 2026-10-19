@@ -1,0 +1,19 @@
+# Default-deny ingress for the CloudNativePG operator. Allowed in: its own pods and the API
+# server (mutating/validating webhooks for Cluster, Backup, … objects).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: cnpg-system
+spec:
+  endpointSelector: {}
+  ingress:
+    - fromEndpoints:
+        - {} # any pod in this namespace
+    - fromEntities: # admission webhooks: the API server reaches them through konnectivity
+        - kube-apiserver
+        - host
+        - remote-node
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system

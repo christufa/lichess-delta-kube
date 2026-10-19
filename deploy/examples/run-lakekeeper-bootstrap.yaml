@@ -1,0 +1,10 @@
+# Not synced by Argo CD: run once after Lakekeeper is up (safe to re-run).
+#   kubectl create -n lichess -f deploy/examples/run-lakekeeper-bootstrap.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: lakekeeper-bootstrap-
+  namespace: lichess
+spec:
+  workflowTemplateRef:
+    name: lakekeeper-bootstrap

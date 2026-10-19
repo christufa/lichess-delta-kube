@@ -1,0 +1,30 @@
+# Lakekeeper's Postgres (CloudNativePG Cluster) and encryption key (deploy/lakekeeper).
+# Synced before the Lakekeeper chart, whose migration job needs the database.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: lakekeeper-db
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: lichess
+  source:
+    repoURL: https://github.com/christufa/lichess-delta-kube.git
+    targetRevision: main
+    path: deploy/lakekeeper
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: lakekeeper
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - SkipDryRunOnMissingResource=true # CNPG / ESO CRDs may not exist yet
+    retry:
+      limit: 10
+      backoff: { duration: 30s, factor: 2, maxDuration: 5m }

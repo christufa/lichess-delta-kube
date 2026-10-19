@@ -1,0 +1,16 @@
+# Not synced by Argo CD: Spark writes and reads an Iceberg table through Lakekeeper.
+#   kubectl create -n lichess -f deploy/examples/run-catalog-smoke.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: catalog-smoke-
+  namespace: lichess
+spec:
+  workflowTemplateRef:
+    name: spark-job
+  arguments:
+    parameters:
+      - name: job
+        value: catalog_smoke
+      - name: executors
+        value: "1"

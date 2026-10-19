@@ -11,15 +11,16 @@ data "azurerm_client_config" "current" {}
 locals {
   facts_prefix = "lichess.generops.dev"
   cluster_facts = {
-    "acr-login-server"    = local.compute.acr_login_server
-    "key-vault-url"       = local.compute.key_vault_uri
-    "tenant-id"           = data.azurerm_client_config.current.tenant_id
-    "eso-namespace"       = local.compute.eso_namespace
-    "eso-service-account" = local.compute.eso_service_account
-    "kyverno-client-id"   = local.compute.kyverno_identity_client_id
-    "grafana-client-id"   = local.compute.grafana_identity_client_id
-    "prometheus-url"      = local.compute.prometheus_query_endpoint
-    "grafana-url"         = "https://${local.private_hosts.grafana.hostname}"
+    "acr-login-server"     = local.compute.acr_login_server
+    "key-vault-url"        = local.compute.key_vault_uri
+    "tenant-id"            = data.azurerm_client_config.current.tenant_id
+    "eso-namespace"        = local.compute.eso_namespace
+    "eso-service-account"  = local.compute.eso_service_account
+    "kyverno-client-id"    = local.compute.kyverno_identity_client_id
+    "grafana-client-id"    = local.compute.grafana_identity_client_id
+    "lakekeeper-client-id" = local.compute.lakekeeper_identity_client_id
+    "prometheus-url"       = local.compute.prometheus_query_endpoint
+    "grafana-url"          = "https://${local.private_hosts.grafana.hostname}"
   }
 }
 

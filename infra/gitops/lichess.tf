@@ -33,10 +33,13 @@ resource "kubernetes_config_map_v1" "lichess" {
     }
   }
   data = {
-    LICHESS_DEST     = local.platform.lichess_dest
-    LAKE_ACCOUNT     = local.platform.lake_account_name
-    LAKE_CONTAINER   = local.platform.lake_container_name
-    ACR_LOGIN_SERVER = local.compute.acr_login_server
+    LICHESS_DEST        = local.platform.lichess_dest
+    LAKE_ACCOUNT        = local.platform.lake_account_name
+    LAKE_CONTAINER      = local.platform.lake_container_name
+    ACR_LOGIN_SERVER    = local.compute.acr_login_server
+    # Iceberg REST catalog (deploy/apps/lakekeeper.yaml) and its warehouse
+    LICHESS_CATALOG_URI = "http://lakekeeper.lakekeeper.svc.cluster.local:8181/catalog"
+    LICHESS_WAREHOUSE   = "lichess"
   }
 }
 

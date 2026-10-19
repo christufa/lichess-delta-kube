@@ -1,0 +1,24 @@
+# Lakekeeper's catalog database. CloudNativePG creates the database "catalog" owned by user
+# "catalog" and a Secret lakekeeper-pg-app with its generated password (no password in git
+# or Key Vault). Single instance on the system pool: the catalog is small, and the table
+# data and Iceberg metadata files live in the lake. Backups to the lake: follow-up.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: lakekeeper-pg
+  namespace: lakekeeper
+spec:
+  instances: 1
+  storage:
+    size: 8Gi
+    storageClass: managed-csi
+  bootstrap:
+    initdb:
+      database: catalog
+      owner: catalog
+  affinity:
+    nodeSelector:
+      kubernetes.azure.com/agentpool: system
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 1Gi }
