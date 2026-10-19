@@ -17,14 +17,45 @@ resource "helm_release" "argocd" {
   timeout    = 900
 
   values = [yamlencode({
-    # Single-user setup reached through `kubectl port-forward`: no Dex (SSO comes
-    # with #45) and no notifications controller.
+    # Sign-in with Microsoft Entra ID directly (no Dex), using workload identity: the
+    # argocd-server pod proves itself to Entra with its Kubernetes token, so there is no
+    # client secret anywhere. Reached at https://chess-cd.generops.dev behind Cloudflare
+    # Access, or with kubectl port-forward.
     dex           = { enabled = false }
     notifications = { enabled = false }
-    # Small requests: everything shares one D4as_v5 with the cluster add-ons.
-    controller     = { resources = { requests = { cpu = "250m", memory = "512Mi" } } }
-    repoServer     = { resources = { requests = { cpu = "100m", memory = "256Mi" } } }
-    server         = { resources = { requests = { cpu = "50m", memory = "128Mi" } } }
+    configs = {
+      cm = {
+        url             = "https://${local.private_hosts.cd.hostname}"
+        "admin.enabled" = tostring(var.argocd_admin_enabled)
+        "oidc.config" = yamlencode({
+          name     = "Microsoft"
+          issuer   = "https://login.microsoftonline.com/${data.azuread_client_config.current.tenant_id}/v2.0"
+          clientID = azuread_application.argocd.client_id
+          azure    = { useWorkloadIdentity = true }
+          requestedIDTokenClaims = {
+            groups = { essential = true }
+          }
+          requestedScopes = ["openid", "profile", "email"]
+        })
+      }
+      # Members of the Entra group "<prefix> admins" are admins; anyone else who somehow
+      # signs in gets nothing (empty default role).
+      rbac = {
+        "policy.default" = ""
+        "policy.csv"     = "g, ${azuread_group.admins.object_id}, role:admin\n"
+        scopes           = "[groups]"
+      }
+    }
+    # Small requests: everything shares the system pool with the cluster add-ons.
+    controller = { resources = { requests = { cpu = "250m", memory = "512Mi" } } }
+    repoServer = { resources = { requests = { cpu = "100m", memory = "256Mi" } } }
+    server = {
+      resources = { requests = { cpu = "50m", memory = "128Mi" } }
+      podLabels = { "azure.workload.identity/use" = "true" }
+      serviceAccount = {
+        annotations = { "azure.workload.identity/client-id" = azuread_application.argocd.client_id }
+      }
+    }
     redis          = { resources = { requests = { cpu = "50m", memory = "64Mi" } } }
     applicationSet = { resources = { requests = { cpu = "50m", memory = "128Mi" } } }
   })]
