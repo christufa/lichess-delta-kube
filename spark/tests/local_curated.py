@@ -1,5 +1,5 @@
-"""curated.games end to end in Spark local mode, with a local Iceberg (Hadoop) catalog standing
-in for Lakekeeper: raw months published first, then built into curated. Run in CI inside the image:
+"""raw → curated.games → curated.player_games → gold end to end in Spark local mode, with a local
+Iceberg (Hadoop) catalog standing in for Lakekeeper. Run in CI inside the image:
 
   spark-submit --master 'local[2]' /opt/lichess/tests/local_curated.py
 """
@@ -14,7 +14,7 @@ os.environ["LICHESS_DEST"] = root
 os.environ.pop("LICHESS_CATALOG_URI", None)
 
 from lichess_spark import get_spark  # noqa: E402
-from lichess_spark import curated, raw, wap  # noqa: E402
+from lichess_spark import curated, gold, player_games, raw, wap  # noqa: E402
 
 import sys
 import traceback
@@ -73,6 +73,7 @@ def run():
     jan[3] = game("2013-01", 3, WhiteElo="?", WhiteRatingDiff=None)       # unknown rating
     jan[4] = game("2013-01", 4, Termination="Something new")              # unknown termination
     jan[5] = game("2013-01", 5, Event="Rated Blitz tournament https://lichess.org/tournament/winter15")
+    jan[6] = game("2013-01", 6, White="MixedCase")                        # player_id is lower-cased
     jan.append(game("2013-01", 0, _source_file="2013-01b.pgn.zst"))       # same game id again
     land_and_publish("2013-01", jan)
     # 2013-02: one unparseable time control → must be rejected (main untouched).
@@ -115,10 +116,38 @@ def run():
     assert wap.gate(curated.build_month(spark, "2013-01"))
     assert spark.table(curated.TABLE).count() == len(jan)                 # rebuilt, not appended
 
+    # player_games: two rows per game, duplicates included; built only from published games months.
+    assert player_games.pending_months(spark) == ["2013-01"], player_games.pending_months(spark)
+    p1 = {c.name: c for c in player_games.build_month(spark, "2013-01")}
+    assert wap.gate(list(p1.values())) and p1["outcome_decided"].observed == 2, p1
+    pg = spark.table(player_games.TABLE)
+    assert pg.count() == 2 * len(jan) and pg.where("color = 'white'").count() == len(jan)
+    assert pg.where("player = 'MixedCase' AND player_id = 'mixedcase'").count() == 1
+    win = pg.where("game_id = '01000000' AND NOT is_duplicate").select("color", "outcome", "score", "opponent_id").collect()
+    assert sorted(tuple(r) for r in win) == [("black", "loss", 0.0, "w0"), ("white", "win", 1.0, "b0")], win
+    buckets = spark.sql(f"SELECT count(DISTINCT partition.player_id_bucket) FROM {player_games.TABLE}.partitions").first()[0]
+    assert buckets > 1, buckets                                            # bucket(16, player_id) in the spec
+    assert wap.gate(player_games.build_month(spark, "2013-01")) and spark.table(player_games.TABLE).count() == 2 * len(jan)
+    assert player_games.pending_months(spark) == [], player_games.pending_months(spark)
+
+    # gold: each game once; totals reconcile with curated.
+    unique = len(jan) - 1
+    assert gold.pending_months(spark) == ["2013-01"], gold.pending_months(spark)
+    g1 = gold.build_month(spark, "2013-01")
+    assert wap.gate(g1), g1
+    s = {r["speed"]: r for r in spark.table(gold.SUMMARY).collect()}
+    assert s["all"]["games"] == unique and sum(r["games"] for k, r in s.items() if k != "all") == unique, s
+    assert s["all"]["players"] == 2 * unique and s["all"]["unfinished"] == 1 and s["all"]["bot_games"] == 1, s["all"]
+    assert spark.table(gold.OPENINGS).agg({"games": "sum"}).first()[0] == unique
+    assert spark.table(gold.RATINGS).agg({"player_games": "sum"}).first()[0] == 2 * unique
+    assert spark.table(gold.RATINGS).where("rating_bucket IS NULL").agg({"player_games": "sum"}).first()[0] == 1  # the '?' rating
+    assert gold.pending_months(spark) == []
+
     dq = spark.table(wap.DQ_TABLE).where(f"table_name = '{curated.TABLE}'")
     assert dq.where("NOT passed AND blocking").count() == 1                # Feb's time control
     assert dq.where("NOT passed AND NOT blocking").count() >= 4
-    print("local curated ok:", spark.table(curated.TABLE).count(), "rows;", dq.count(), "curated checks recorded")
+    print("local curated ok:", spark.table(curated.TABLE).count(), "games;", spark.table(player_games.TABLE).count(),
+          "player rows;", spark.table(gold.SUMMARY).count(), "summary rows;", dq.count(), "curated checks recorded")
     spark.stop()
 
 
