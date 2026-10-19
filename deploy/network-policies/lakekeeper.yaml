@@ -1,5 +1,5 @@
 # Default-deny ingress for lakekeeper. Allowed in:
-#   - pods in lakekeeper (catalog → its Postgres)
+#   - pods in lakekeeper (catalog → its Postgres and OpenFGA, OpenFGA → its Postgres)
 #   - lichess → the catalog API (Spark drivers, notebooks, the bootstrap workflow)
 #   - cnpg-system → the Postgres instance manager (status, failover, backups)
 # Trino gets its own allow rule when it arrives (#64).
@@ -38,8 +38,8 @@ metadata:
   namespace: lakekeeper
 spec:
   endpointSelector:
-    matchLabels:
-      cnpg.io/cluster: lakekeeper-pg
+    matchExpressions:
+      - { key: cnpg.io/cluster, operator: Exists } # every CloudNativePG instance here
   ingress:
     - fromEndpoints:
         - matchLabels:

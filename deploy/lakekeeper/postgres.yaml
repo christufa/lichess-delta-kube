@@ -1,11 +1,15 @@
-# Lakekeeper's catalog database. CloudNativePG creates the database "catalog" owned by user
-# "catalog" and a Secret lakekeeper-pg-app with its generated password (no password in git
-# or Key Vault). Single instance on the system pool: the catalog is small, and the table
-# data and Iceberg metadata files live in the lake. Backups to the lake: follow-up.
+# Lakekeeper's databases, run by CloudNativePG. Each cluster creates its database and a user
+# with a generated password in the Secret <cluster>-app (no passwords in git or Key Vault).
+# Single instances on the system pool: both are small; table data and Iceberg metadata files
+# live in the lake. Backups to the lake: follow-up.
+#
+# The catalog cluster is called lakekeeper-catalog-pg (not lakekeeper-pg): renaming it is how
+# the catalog was reset when authorization switched from allowall to OpenFGA, which Lakekeeper
+# only accepts on a fresh bootstrap.
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
-  name: lakekeeper-pg
+  name: lakekeeper-catalog-pg
   namespace: lakekeeper
 spec:
   instances: 1
@@ -22,3 +26,25 @@ spec:
   resources:
     requests: { cpu: 100m, memory: 256Mi }
     limits: { memory: 1Gi }
+---
+# OpenFGA's store: who may do what in the catalog (relationship tuples).
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: openfga-pg
+  namespace: lakekeeper
+spec:
+  instances: 1
+  storage:
+    size: 4Gi
+    storageClass: managed-csi
+  bootstrap:
+    initdb:
+      database: openfga
+      owner: openfga
+  affinity:
+    nodeSelector:
+      kubernetes.azure.com/agentpool: system
+  resources:
+    requests: { cpu: 50m, memory: 192Mi }
+    limits: { memory: 512Mi }
