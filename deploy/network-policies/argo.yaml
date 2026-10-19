@@ -36,3 +36,23 @@ spec:
       toPorts:
         - ports:
             - { port: "2746", protocol: TCP }
+---
+# Azure Managed Prometheus (ama-metrics in kube-system) scrapes the workflow controller (:9090).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-metrics-scrape
+  namespace: argo
+spec:
+  endpointSelector: {}
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - { port: "9090", protocol: TCP }
+    - fromEntities: [host, remote-node] # in case the agent runs on the host network
+      toPorts:
+        - ports:
+            - { port: "9090", protocol: TCP }

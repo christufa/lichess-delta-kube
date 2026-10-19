@@ -62,3 +62,11 @@ output "eso_service_account" {
 output "kyverno_identity_client_id" {
   value = azurerm_user_assigned_identity.kyverno.client_id
 }
+
+output "prometheus_query_endpoint" {
+  value = azurerm_monitor_workspace.main.query_endpoint
+}
+
+output "grafana_identity_client_id" {
+  value = azurerm_user_assigned_identity.grafana.client_id
+}

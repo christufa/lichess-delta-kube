@@ -92,3 +92,9 @@ variable "eso_service_account" {
   type        = string
   default     = "eso-azure-kv"
 }
+
+variable "alert_email" {
+  description = "Where monitoring alerts are emailed (kept in terraform.tfvars, not in git)"
+  type        = string
+}
+

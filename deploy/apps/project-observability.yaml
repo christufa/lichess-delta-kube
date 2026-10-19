@@ -1,0 +1,21 @@
+# Argo CD project for scrape configuration that lives in other projects' namespaces. It can
+# only create PodMonitors/ServiceMonitors (Azure Managed Prometheus CRDs), nothing else.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: observability
+  namespace: argocd
+spec:
+  description: Scrape configuration for Azure Managed Prometheus (christufa/lichess-delta-kube)
+  sourceRepos:
+    - https://github.com/christufa/lichess-delta-kube.git
+  destinations:
+    - { server: https://kubernetes.default.svc, namespace: argo }
+    - { server: https://kubernetes.default.svc, namespace: argocd }
+    - { server: https://kubernetes.default.svc, namespace: cloudflared }
+    - { server: https://kubernetes.default.svc, namespace: lichess }
+    - { server: https://kubernetes.default.svc, namespace: monitoring }
+  clusterResourceWhitelist: []
+  namespaceResourceWhitelist:
+    - { group: azmonitoring.coreos.com, kind: PodMonitor }
+    - { group: azmonitoring.coreos.com, kind: ServiceMonitor }

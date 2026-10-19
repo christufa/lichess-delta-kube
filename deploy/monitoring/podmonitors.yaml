@@ -1,0 +1,45 @@
+# What Azure Managed Prometheus scrapes besides the cluster defaults (kubelet, cAdvisor,
+# kube-state-metrics, node-exporter). The ama-metrics agents read PodMonitors from the
+# azmonitoring.coreos.com group in every namespace.
+# https://learn.microsoft.com/azure/azure-monitor/containers/prometheus-metrics-scrape-crd
+apiVersion: azmonitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: argo-workflows-controller
+  namespace: argo
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: argo-workflows-workflow-controller
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+---
+apiVersion: azmonitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: argocd
+  namespace: argocd
+spec:
+  selector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values: [argocd-application-controller, argocd-server, argocd-repo-server]
+  podMetricsEndpoints:
+    - port: metrics
+      interval: 30s
+---
+apiVersion: azmonitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: cloudflared
+  namespace: cloudflared
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cloudflared
+  podMetricsEndpoints:
+    - port: metrics
+      interval: 30s

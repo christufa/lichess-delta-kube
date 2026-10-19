@@ -9,3 +9,7 @@ state_storage_account_name = "st<project>tf<suffix>"
 # system_vm_size  = "Standard_D4as_v5"
 # batch_vm_size   = "Standard_E8s_v5"
 # batch_max_nodes = 4
+
+# Monitoring alerts (#31)
+alert_email = "you@example.com"
+

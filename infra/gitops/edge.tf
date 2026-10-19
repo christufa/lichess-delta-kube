@@ -20,6 +20,12 @@ locals {
       service       = "http://argo-workflows-server.argo.svc.cluster.local:2746"
       no_tls_verify = false
     }
+    grafana = {
+      hostname      = "${var.hostname_prefix}-grafana.${var.domain}"
+      title         = "Grafana"
+      service       = "http://grafana.monitoring.svc.cluster.local:80"
+      no_tls_verify = false
+    }
     # JupyterLab listens on 127.0.0.1 inside its pod, so it gets its own tunnel whose only
     # connector is a cloudflared sidecar in that pod (deploy/lichess/workflowtemplate-jupyter.yaml).
     # The hostname is only up while a notebook runs.

@@ -37,6 +37,8 @@ spec:
         controller:
           workflowNamespaces:
             - lichess
+          metricsConfig:
+            enabled: true # Prometheus metrics on :9090 (scraped via deploy/monitoring)
           resources:
             requests: { cpu: 100m, memory: 128Mi }
           workflowDefaults:

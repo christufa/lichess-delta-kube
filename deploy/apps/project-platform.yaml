@@ -18,6 +18,7 @@ spec:
     - { server: https://kubernetes.default.svc, namespace: external-secrets }
     - { server: https://kubernetes.default.svc, namespace: kyverno }
     - { server: https://kubernetes.default.svc, namespace: cloudflared }
+    - { server: https://kubernetes.default.svc, namespace: monitoring }
   clusterResourceWhitelist: []
   namespaceResourceWhitelist:
     - group: cilium.io
