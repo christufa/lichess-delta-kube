@@ -29,7 +29,7 @@ spec:
         value: auto
       - name: publish
         value: "true"
-        description: publish each month into lake.raw.games after it lands
+        description: publish each month into lake.raw.games after it lands, then lake.curated.games
 
   # ingest-month's container mounts this volume; templates referenced from another
   # WorkflowTemplate use the calling workflow's volumes.

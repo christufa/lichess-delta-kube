@@ -108,7 +108,24 @@ into the Iceberg table **`lake.raw.games`**, one month at a time:
 
 Readers never see an unchecked month; every check is stored in `lake.ops.dq_results`.
 `--pending` publishes every landed month that isn't in the table yet; re-publishing a month
-replaces it.
+replaces it. The branch-and-publish steps live in `lichess_spark/wap.py`, shared with curated.
+
+## curated.games
+
+`jobs/build_curated_games.py` builds **`lake.curated.games`** from `lake.raw.games`, a month
+at a time, with the same write-audit-publish. **Nothing is filtered**: every raw row becomes
+one typed row (`game_id`, `played_at` in UTC, ratings as integers, base/increment and speed
+class, normalized `result`, titles and `*_is_bot`, tournament/swiss id, lineage). What's
+unusual is kept and counted, not dropped:
+
+| Check | Blocks publishing? |
+|---|---|
+| curated rows = raw rows; `game_id` present; time control parseable; `played_at` present; month consistent; not empty | yes |
+| `game_id` unique (extra copies get `is_duplicate`); ratings in 400–4000; result decided (`*` → null); termination known; `played_at` in the month | no, counted in `dq_results` |
+
+Each row records the raw snapshot it came from (`_raw_snapshot_id`); `--pending` builds raw
+months that aren't in curated yet or were republished in raw since. `ingest-month` (and so
+`ingest-backfill`) runs it after publishing raw.
 
 ## Adding a job
 
