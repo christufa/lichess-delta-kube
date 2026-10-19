@@ -1,0 +1,133 @@
+# Grafana at https://chess-grafana.generops.dev (Cloudflare Access → cloudflared → here).
+# - Data: Azure Managed Prometheus, read with workload identity (id-lichess-grafana,
+#   Monitoring Data Reader). No secrets.
+# - Login: Cloudflare Access has already signed you in with Microsoft and cloudflared has
+#   checked the Access token; Grafana trusts the email header Cloudflare adds (auth proxy).
+#   Only cloudflared can reach Grafana (deploy/network-policies/monitoring.yaml).
+# - Dashboards are code: downloaded at startup, no database to keep.
+# ApplicationSet so the client ID, workspace URL and hostname come from the cluster facts.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: grafana
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - clusters:
+        selector:
+          matchLabels:
+            lichess.generops.dev/facts: "true"
+  template:
+    metadata:
+      name: grafana
+      annotations:
+        argocd.argoproj.io/sync-wave: "1"
+    spec:
+      project: lichess
+      source:
+        repoURL: https://grafana-community.github.io/helm-charts
+        chart: grafana
+        targetRevision: 14.0.1 # Grafana 13.2
+        helm:
+          releaseName: grafana
+          valuesObject:
+            fullnameOverride: grafana
+            replicas: 1
+            podLabels:
+              azure.workload.identity/use: "true"
+            serviceAccount:
+              create: true
+              name: grafana
+              annotations:
+                azure.workload.identity/client-id: '{{ index .metadata.annotations "lichess.generops.dev/grafana-client-id" }}'
+            nodeSelector:
+              kubernetes.azure.com/agentpool: system
+            resources:
+              requests: { cpu: 50m, memory: 192Mi }
+              limits: { memory: 512Mi }
+            persistence:
+              enabled: false # stateless: dashboards and datasources are provisioned
+            grafana.ini:
+              server:
+                root_url: '{{ index .metadata.annotations "lichess.generops.dev/grafana-url" }}'
+              analytics:
+                reporting_enabled: false
+                check_for_updates: false
+              auth:
+                disable_login_form: true
+                azure_auth_enabled: true # Azure credentials for the Prometheus datasource
+              auth.anonymous:
+                enabled: false
+              auth.basic:
+                enabled: false
+              auth.proxy:
+                enabled: true
+                header_name: Cf-Access-Authenticated-User-Email
+                header_property: email
+                auto_sign_up: true
+                enable_login_token: false
+              users:
+                allow_sign_up: false
+                auto_assign_org_role: Admin # only the owner passes Cloudflare Access
+              azure:
+                workload_identity_enabled: true
+            datasources:
+              datasources.yaml:
+                apiVersion: 1
+                datasources:
+                  - name: Azure Managed Prometheus
+                    uid: amp
+                    type: prometheus
+                    access: proxy
+                    isDefault: true
+                    url: '{{ index .metadata.annotations "lichess.generops.dev/prometheus-url" }}'
+                    jsonData:
+                      httpMethod: POST
+                      timeInterval: 30s
+                      azureCredentials:
+                        authType: workloadidentity
+                      azureEndpointResourceId: https://prometheus.monitor.azure.com
+            dashboardProviders:
+              dashboardproviders.yaml:
+                apiVersion: 1
+                providers:
+                  - name: kubernetes
+                    folder: Kubernetes
+                    type: file
+                    disableDeletion: true
+                    editable: false
+                    options: { path: /var/lib/grafana/dashboards/kubernetes }
+                  - name: platform
+                    folder: Platform
+                    type: file
+                    disableDeletion: true
+                    editable: false
+                    options: { path: /var/lib/grafana/dashboards/platform }
+            dashboards:
+              kubernetes:
+                k8s-global:
+                  url: https://raw.githubusercontent.com/dotdc/grafana-dashboards-kubernetes/v3.0.8/dashboards/k8s-views-global.json
+                k8s-namespaces:
+                  url: https://raw.githubusercontent.com/dotdc/grafana-dashboards-kubernetes/v3.0.8/dashboards/k8s-views-namespaces.json
+                k8s-nodes:
+                  url: https://raw.githubusercontent.com/dotdc/grafana-dashboards-kubernetes/v3.0.8/dashboards/k8s-views-nodes.json
+                k8s-pods:
+                  url: https://raw.githubusercontent.com/dotdc/grafana-dashboards-kubernetes/v3.0.8/dashboards/k8s-views-pods.json
+              platform:
+                argo-cd:
+                  url: https://raw.githubusercontent.com/argoproj/argo-cd/v3.5.5/examples/dashboard.json
+                  datasource: amp
+      destination:
+        server: '{{ .server }}'
+        namespace: monitoring
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+        retry:
+          limit: 5
+          backoff: { duration: 30s, factor: 2, maxDuration: 5m }

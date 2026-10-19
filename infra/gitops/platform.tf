@@ -17,6 +17,9 @@ locals {
     "eso-namespace"       = local.compute.eso_namespace
     "eso-service-account" = local.compute.eso_service_account
     "kyverno-client-id"   = local.compute.kyverno_identity_client_id
+    "grafana-client-id"   = local.compute.grafana_identity_client_id
+    "prometheus-url"      = local.compute.prometheus_query_endpoint
+    "grafana-url"         = "https://${local.private_hosts.grafana.hostname}"
   }
 }
 

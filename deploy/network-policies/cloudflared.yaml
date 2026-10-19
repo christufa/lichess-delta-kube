@@ -10,3 +10,23 @@ spec:
   ingress:
     - fromEndpoints:
         - {} # any pod in this namespace
+---
+# Azure Managed Prometheus (ama-metrics in kube-system) scrapes cloudflared (:2000).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-metrics-scrape
+  namespace: cloudflared
+spec:
+  endpointSelector: {}
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - { port: "2000", protocol: TCP }
+    - fromEntities: [host, remote-node] # in case the agent runs on the host network
+      toPorts:
+        - ports:
+            - { port: "2000", protocol: TCP }

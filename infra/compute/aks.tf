@@ -63,6 +63,13 @@ resource "azurerm_kubernetes_cluster" "main" {
     outbound_type       = "loadBalancer"
   }
 
+  # Azure Managed Prometheus: the ama-metrics agents in kube-system scrape the cluster and
+  # PodMonitors, and ship to the Azure Monitor workspace (monitoring.tf).
+  monitor_metrics {
+    annotations_allowed = null
+    labels_allowed      = null
+  }
+
   # Remove idle nodes quickly; they cost money every minute they exist. The system pool
   # never goes below min_count = 1.
   auto_scaler_profile {
