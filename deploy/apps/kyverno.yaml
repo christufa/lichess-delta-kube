@@ -44,6 +44,11 @@ spec:
               container:
                 resources:
                   requests: { cpu: 100m, memory: 256Mi }
+                # Verified images (and the digest a tag resolved to) are cached; the default
+                # 60 minutes keeps resolving :main to the previous build long after CI
+                # pushed a new one. 2 minutes still saves the registry round trip per pod.
+                extraArgs:
+                  imageVerifyCacheTTLDuration: 2m
             backgroundController:
               resources:
                 requests: { cpu: 50m, memory: 64Mi }
