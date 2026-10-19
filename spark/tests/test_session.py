@@ -53,3 +53,17 @@ def test_catalog_conf_rest_with_vended_credentials():
     assert conf["spark.sql.catalog.lake.header.X-Iceberg-Access-Delegation"] == "vended-credentials"
     assert conf["spark.sql.defaultCatalog"] == "lake"
     assert "IcebergSparkSessionExtensions" in conf["spark.sql.extensions"]
+
+
+def test_catalog_conf_sends_service_account_token(tmp_path):
+    from lichess_spark.session import catalog_conf
+    tok = tmp_path / "token"
+    tok.write_text("eyJ.test.token\n")
+    conf = catalog_conf({"LICHESS_CATALOG_URI": "http://lk/catalog", "LICHESS_CATALOG_TOKEN_FILE": str(tok)})
+    assert conf["spark.sql.catalog.lake.token"] == "eyJ.test.token"
+
+
+def test_catalog_conf_without_token_file():
+    from lichess_spark.session import catalog_conf
+    conf = catalog_conf({"LICHESS_CATALOG_URI": "http://lk/catalog", "LICHESS_CATALOG_TOKEN_FILE": "/nonexistent"})
+    assert "spark.sql.catalog.lake.token" not in conf

@@ -14,6 +14,8 @@ The Iceberg catalog (if LICHESS_CATALOG_URI is set, as in the cluster):
   LICHESS_CATALOG_URI  Lakekeeper's Iceberg REST endpoint, …/catalog
   LICHESS_WAREHOUSE    warehouse name (default "lichess")
   Tables are lake.<namespace>.<table>; Lakekeeper vends a SAS token scoped to each table.
+  The pod's Kubernetes service account token authenticates to Lakekeeper (redacted in the
+  Spark UI by spark.redaction.regex).
 """
 from __future__ import annotations
 
@@ -22,6 +24,7 @@ from urllib.parse import urlparse
 
 WI_PROVIDER = "org.apache.hadoop.fs.azurebfs.oauth2.WorkloadIdentityTokenProvider"
 CATALOG = "lake"
+SA_TOKEN = "/var/run/secrets/kubernetes.io/serviceaccount/token"
 
 
 def dest_root(env=None) -> str:
@@ -77,7 +80,13 @@ def catalog_conf(env=None) -> dict[str, str]:
     if not uri:
         return {}
     c = f"spark.sql.catalog.{CATALOG}"
+    token_file = env.get("LICHESS_CATALOG_TOKEN_FILE", SA_TOKEN)
+    auth = {}
+    if os.path.exists(token_file):
+        with open(token_file) as fh:
+            auth = {f"{c}.token": fh.read().strip()}
     return {
+        **auth,
         "spark.sql.extensions": "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
         c: "org.apache.iceberg.spark.SparkCatalog",
         f"{c}.type": "rest",

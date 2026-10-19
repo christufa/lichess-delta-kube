@@ -17,14 +17,14 @@ deploy/
     lichess.yaml                the pipeline's own objects from deploy/lichess, wave 1
     cloudflared.yaml            Cloudflare Tunnel connector for chess-*.generops.dev, wave 1
     cnpg.yaml                   CloudNativePG operator (Postgres), wave 0
-    lakekeeper-db.yaml          Lakekeeper's Postgres cluster + encryption key (deploy/lakekeeper), wave 1
-    lakekeeper.yaml             Lakekeeper, the Iceberg REST catalog (ApplicationSet: identity from facts), wave 2
+    lakekeeper-db.yaml          Postgres for the catalog and OpenFGA + encryption key (deploy/lakekeeper), wave 1
+    lakekeeper.yaml             Lakekeeper, the Iceberg REST catalog: Kubernetes token sign-in, OpenFGA permissions, wave 2
     grafana.yaml                Grafana for chess-grafana (ApplicationSet: identity, workspace URL from facts), wave 1
     project-observability.yaml  AppProject that may only create PodMonitors/ServiceMonitors
     monitoring.yaml             PodMonitors for Azure Managed Prometheus (deploy/monitoring), wave 2
     network-policies.yaml       default-deny ingress everywhere (deploy/network-policies), wave 2
   cloudflared/                cloudflared Deployment (routes and Access live in infra/gitops/edge.tf)
-  lakekeeper/                 CloudNativePG Cluster for the catalog, generated encryption key
+  lakekeeper/                 CloudNativePG clusters for the catalog and OpenFGA, generated encryption key
   charts/platform/            ClusterSecretStore, image signature policy (values from cluster facts)
   monitoring/                 PodMonitors (Argo Workflows, Argo CD, cloudflared)
   network-policies/           one CiliumNetworkPolicy per namespace (+ scrape and cloudflared allows)

@@ -2,6 +2,8 @@
 # "lichess" over the lake. The warehouse's base location is LICHESS_DEST, so the raw
 # Parquet already landed under it can become Iceberg tables in place (#23). Storage access
 # uses Lakekeeper's own workload identity; clients get table-scoped SAS tokens.
+# Calls are authenticated with this pod's service account token (lichess-jobs), which
+# bootstraps as operator and is instance admin (LAKEKEEPER__INSTANCE_ADMINS).
 #
 #   kubectl create -n lichess -f deploy/examples/run-lakekeeper-bootstrap.yaml
 apiVersion: argoproj.io/v1alpha1
@@ -39,10 +41,13 @@ spec:
           container, host = dest.netloc.split("@", 1)
           account, prefix = host.split(".", 1)[0], dest.path.strip("/")
 
+          token = open("/var/run/secrets/kubernetes.io/serviceaccount/token").read().strip()
+
           def call(method, path, body=None):
               data = json.dumps(body).encode() if body is not None else None
               req = urllib.request.Request(base + path, data=data, method=method,
-                                           headers={"Content-Type": "application/json"})
+                                           headers={"Content-Type": "application/json",
+                                                    "Authorization": f"Bearer {token}"})
               try:
                   with urllib.request.urlopen(req, timeout=30) as r:
                       raw = r.read()
@@ -55,7 +60,8 @@ spec:
           if status != 200:
               sys.exit("Lakekeeper is not reachable")
           if not info.get("bootstrapped"):
-              print("bootstrap:", *call("POST", "/management/v1/bootstrap", {"accept-terms-of-use": True}))
+              print("bootstrap:", *call("POST", "/management/v1/bootstrap",
+                                        {"accept-terms-of-use": True, "is-operator": True}))
 
           status, listing = call("GET", "/management/v1/warehouse")
           names = [w["name"] for w in (listing or {}).get("warehouses", [])] if status == 200 else []

@@ -2,8 +2,11 @@
 # - Signs in to the lake with workload identity (id-lichess-lakekeeper) and vends
 #   short-lived, table-scoped SAS tokens to Spark/Trino.
 # - Database: CloudNativePG cluster lakekeeper-pg (deploy/lakekeeper).
-# - Reachable only from lichess (Spark, notebooks, workflows) and, later, Trino
-#   (deploy/network-policies/lakekeeper.yaml). Authentication + OpenFGA authorization: follow-up.
+# - Authentication: Kubernetes service account tokens, checked with the TokenReview API.
+#   Callers appear as kubernetes~system:serviceaccount:<namespace>:<name>.
+# - Authorization: OpenFGA (subchart, its own CloudNativePG database). lichess-jobs (Spark
+#   jobs, workflows, notebooks) is instance admin; Trino gets read access when it arrives.
+# - Network: reachable only from lichess and, later, Trino (deploy/network-policies/lakekeeper.yaml).
 # ApplicationSet so the identity's client ID comes from the cluster facts.
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
@@ -49,6 +52,8 @@ spec:
                 capabilities: { drop: [ALL] }
               config:
                 LAKEKEEPER__ENABLE_AZURE_SYSTEM_CREDENTIALS: "true"
+                LAKEKEEPER__KUBERNETES_AUTHENTICATION_SUBJECT_SOURCE: username
+                LAKEKEEPER__INSTANCE_ADMINS: '["kubernetes~system:serviceaccount:lichess:lichess-jobs"]' 
             serviceAccount:
               create: true
               name: lakekeeper
@@ -63,16 +68,34 @@ spec:
               enabled: false
             externalDatabase:
               type: postgres
-              host_read: lakekeeper-pg-rw
-              host_write: lakekeeper-pg-rw
+              host_read: lakekeeper-catalog-pg-rw
+              host_write: lakekeeper-catalog-pg-rw
               port: 5432
               database: catalog
-              userSecret: lakekeeper-pg-app
+              userSecret: lakekeeper-catalog-pg-app
               userSecretKey: username
-              passwordSecret: lakekeeper-pg-app
+              passwordSecret: lakekeeper-catalog-pg-app
               passwordSecretKey: password
+            auth:
+              k8s:
+                enabled: true
+                createClusterRoleBinding: true # system:auth-delegator for TokenReview
             authz:
-              backend: allowall
+              backend: openfga
+            internalOpenFGA: true
+            openfga:
+              replicaCount: 1
+              datastore:
+                engine: postgres
+                migrationType: initContainer
+                uriSecret: openfga-pg-app # CloudNativePG app secret, key "uri"
+              postgresql:
+                enabled: false # the chart's bundled Postgres; we use CloudNativePG
+              nodeSelector:
+                kubernetes.azure.com/agentpool: system
+              resources:
+                requests: { cpu: 50m, memory: 128Mi }
+                limits: { memory: 512Mi }
       destination:
         server: '{{ .server }}'
         namespace: lakekeeper
