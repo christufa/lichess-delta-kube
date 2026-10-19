@@ -81,3 +81,9 @@ variable "access_allowed_emails" {
   type        = list(string)
 }
 
+variable "argocd_admin_enabled" {
+  description = "Keep Argo CD's local admin account. Set to false once Microsoft sign-in works (kubectl access remains the way back in)"
+  type        = bool
+  default     = true
+}
+
