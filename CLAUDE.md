@@ -50,10 +50,11 @@ Kyverno digest verification, Renovate), Key Vault + ESO, Kyverno PSS (audit),
 Cilium network policies, Cloudflare Tunnel + Access (`chess-cd`, `chess-flows`,
 `chess-lab`, `chess-grafana`), Managed Prometheus + Grafana + email alerts, Lakekeeper
 (K8s-token auth, OpenFGA; `lichess-jobs` is instance admin), `lake.raw.games` with
-write-audit-publish (`lake.ops.dq_results`), backfill pipeline ready (not run yet).
+write-audit-publish (`lake.ops.dq_results`), backfill pipeline ready (not run yet),
+Trino (#64: JWT sign-in, private-CA TLS via trust-manager, read-only; `trino-smoke` passes).
 
-In progress: Trino (#64, PR #90 + #91 cert-manager fix). Verify with the
-`trino-smoke` workflow after re-running `lakekeeper-bootstrap` (grants Trino read).
+In the lake: 2013-01 → 2015-12 and 2026-08/09 (38 months). 2016 was ingested on the PC
+but isn't in `lake.raw.games`; check whether it was ever published.
 
 Next, in order (issues in milestones Phase 4–7):
 1. Curated tables `curated.games`, `curated.player_games` (#25, #26) with WAP checks (#27).
