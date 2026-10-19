@@ -19,6 +19,8 @@ locals {
     "kyverno-client-id"    = local.compute.kyverno_identity_client_id
     "grafana-client-id"    = local.compute.grafana_identity_client_id
     "lakekeeper-client-id" = local.compute.lakekeeper_identity_client_id
+    "trino-client-id"      = local.compute.trino_identity_client_id
+    "aks-oidc-issuer"      = data.azurerm_kubernetes_cluster.main.oidc_issuer_url
     "prometheus-url"       = local.compute.prometheus_query_endpoint
     "grafana-url"          = "https://${local.private_hosts.grafana.hostname}"
   }

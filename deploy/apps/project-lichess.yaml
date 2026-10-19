@@ -17,6 +17,8 @@ spec:
     - https://grafana-community.github.io/helm-charts
     - https://cloudnative-pg.github.io/charts
     - https://lakekeeper.github.io/lakekeeper-charts
+    - https://charts.jetstack.io
+    - https://trinodb.github.io/charts
   destinations:
     - server: https://kubernetes.default.svc
       namespace: argo
@@ -36,6 +38,10 @@ spec:
       namespace: cnpg-system
     - server: https://kubernetes.default.svc
       namespace: lakekeeper
+    - server: https://kubernetes.default.svc
+      namespace: cert-manager
+    - server: https://kubernetes.default.svc
+      namespace: trino
   # Charts like Argo Workflows install CRDs and cluster roles.
   clusterResourceWhitelist:
     - group: "*"

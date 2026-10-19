@@ -1,0 +1,48 @@
+# A private CA for TLS inside the cluster (Trino today). The root key never leaves the
+# cert-manager namespace; services get certificates from the ClusterIssuer internal-ca,
+# and clients trust the root through the ConfigMap internal-ca (trust-manager) in every
+# namespace. Rotated by cert-manager: root 5 years, leaf certificates 90 days.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: internal-root-ca
+  namespace: cert-manager
+spec:
+  isCA: true
+  commonName: lichess internal root CA
+  secretName: internal-root-ca
+  duration: 43800h # 5 years
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    kind: ClusterIssuer
+    name: selfsigned
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: internal-ca
+spec:
+  ca:
+    secretName: internal-root-ca
+---
+apiVersion: trust.cert-manager.io/v1alpha1
+kind: Bundle
+metadata:
+  name: internal-ca
+spec:
+  sources:
+    - secret:
+        name: internal-root-ca
+        key: ca.crt
+  target:
+    configMap:
+      key: ca.crt

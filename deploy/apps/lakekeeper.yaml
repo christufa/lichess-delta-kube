@@ -80,6 +80,9 @@ spec:
               k8s:
                 enabled: true
                 createClusterRoleBinding: true # system:auth-delegator for TokenReview
+                # Trino can only send a static token, so it uses a long-lived service
+                # account token Secret (deploy/trino), whose issuer is the legacy one.
+                legacyEnabled: true
             authz:
               backend: openfga
             internalOpenFGA: true

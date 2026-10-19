@@ -1,0 +1,50 @@
+# End-to-end check of Trino: TLS (private CA), JWT sign-in with this pod's projected service
+# account token (audience trino → user lichess-jobs), the catalog, and lake reads.
+#   kubectl create -n lichess -f deploy/examples/run-trino-smoke.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: trino-smoke
+  namespace: lichess
+spec:
+  entrypoint: smoke
+  volumes:
+    - name: trino-token
+      projected:
+        sources:
+          - serviceAccountToken:
+              audience: trino
+              expirationSeconds: 3600
+              path: token
+    - name: internal-ca
+      configMap:
+        name: internal-ca # trust-manager
+  templates:
+    - name: smoke
+      nodeSelector:
+        kubernetes.azure.com/agentpool: system
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile: { type: RuntimeDefault }
+      container:
+        image: trinodb/trino:484
+        command: [bash, -c]
+        args:
+          - |
+            set -euo pipefail
+            q() { trino --server https://trino.trino.svc.cluster.local:8443 \
+                    --truststore-path /ca/ca.crt --access-token "$(cat /var/run/trino/token)" \
+                    --output-format ALIGNED --execute "$1"; }
+            q "SELECT current_user AS who_am_i"
+            q "SHOW SCHEMAS FROM lake"
+            q "SELECT month, count(*) AS games FROM lake.raw.games GROUP BY month ORDER BY month"
+            q "SELECT check_name, count_if(passed) AS passed, count_if(NOT passed) AS failed FROM lake.ops.dq_results GROUP BY check_name ORDER BY check_name"
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities: { drop: [ALL] }
+        volumeMounts:
+          - { name: trino-token, mountPath: /var/run/trino }
+          - { name: internal-ca, mountPath: /ca }
+        resources:
+          requests: { cpu: 100m, memory: 512Mi }
