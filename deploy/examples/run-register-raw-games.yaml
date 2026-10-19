@@ -1,0 +1,20 @@
+# Not synced by Argo CD: publish landed months into lake.raw.games (write-audit-publish).
+#   kubectl create -n lichess -f deploy/examples/run-register-raw-games.yaml
+# args: ["--pending"] = every month with a manifest that isn't published yet,
+#       or ["--months", "2013-01,2013-02"].
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: register-raw-games-
+  namespace: lichess
+spec:
+  workflowTemplateRef:
+    name: spark-job
+  arguments:
+    parameters:
+      - name: job
+        value: register_raw_games
+      - name: args
+        value: '["--pending"]'
+      - name: executors
+        value: "2"
