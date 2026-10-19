@@ -74,3 +74,7 @@ output "grafana_identity_client_id" {
 output "lakekeeper_identity_client_id" {
   value = azurerm_user_assigned_identity.lakekeeper.client_id
 }
+
+output "trino_identity_client_id" {
+  value = azurerm_user_assigned_identity.trino.client_id
+}

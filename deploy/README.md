@@ -22,11 +22,16 @@ deploy/
     grafana.yaml                Grafana for chess-grafana (ApplicationSet: identity, workspace URL from facts), wave 1
     project-observability.yaml  AppProject that may only create PodMonitors/ServiceMonitors
     monitoring.yaml             PodMonitors for Azure Managed Prometheus (deploy/monitoring), wave 2
+    cert-manager.yaml           cert-manager (in-cluster TLS), wave 0
+    trust-manager.yaml          distributes the private CA as ConfigMap internal-ca, wave 1
+    pki.yaml                    the private CA (deploy/pki), wave 2
+    trino.yaml                  Trino over the lake (ApplicationSet: identity, OIDC issuer from facts), wave 3
     network-policies.yaml       default-deny ingress everywhere (deploy/network-policies), wave 2
   cloudflared/                cloudflared Deployment (routes and Access live in infra/gitops/edge.tf)
   lakekeeper/                 CloudNativePG clusters for the catalog and OpenFGA, generated encryption key
   charts/platform/            ClusterSecretStore, image signature policy (values from cluster facts)
   monitoring/                 PodMonitors (Argo Workflows, Argo CD, cloudflared)
+  pki/                        private CA: ClusterIssuers, root CA, trust-manager Bundle
   network-policies/           one CiliumNetworkPolicy per namespace (+ scrape and cloudflared allows)
   lichess/                    WorkflowTemplates / CronWorkflows (namespace lichess)
     workflowtemplate-lake-smoke.yaml    end-to-end check: identity → lake
@@ -34,7 +39,8 @@ deploy/
     workflowtemplate-ingest-backfill.yaml  fan out ingest-month over a range, 4 at a time
     workflowtemplate-spark-job.yaml     run a PySpark job (spark/jobs) as a SparkApplication
     workflowtemplate-jupyter.yaml       JupyterLab on demand; the kernel drives Spark executors on spot
-    workflowtemplate-lakekeeper-bootstrap.yaml  one-time catalog setup: bootstrap + warehouse "lichess"
+    workflowtemplate-lakekeeper-bootstrap.yaml  catalog setup: bootstrap, warehouse "lichess", read-only grants
+    workflowtemplate-trino-smoke.yaml   Trino end to end: TLS, JWT sign-in, catalog, lake reads
     jupyter.yaml                        its disk (PVC jupyter-work) and port-forward Service
     rbac-spark-submit.yaml              lets workflows create SparkApplications
   examples/                   not synced; submit by hand
@@ -47,6 +53,7 @@ deploy/
     run-lakekeeper-bootstrap.yaml
     run-catalog-smoke.yaml              Spark creates/writes/reads an Iceberg table through Lakekeeper
     run-register-raw-games.yaml         publish landed months into lake.raw.games (write-audit-publish)
+    run-trino-smoke.yaml
 ```
 
 Merging to `main` is the deployment: Argo CD polls the repo every few minutes and

@@ -4,6 +4,8 @@
 # uses Lakekeeper's own workload identity; clients get table-scoped SAS tokens.
 # Calls are authenticated with this pod's service account token (lichess-jobs), which
 # bootstraps as operator and is instance admin (LAKEKEEPER__INSTANCE_ADMINS).
+# Then it provisions the read-only users (parameter `readers`) and grants them describe +
+# select on the default project: they can read every table and change nothing.
 #
 #   kubectl create -n lichess -f deploy/examples/run-lakekeeper-bootstrap.yaml
 apiVersion: argoproj.io/v1alpha1
@@ -13,8 +15,16 @@ metadata:
   namespace: lichess
 spec:
   entrypoint: bootstrap
+  arguments:
+    parameters:
+      - name: readers
+        value: "system:serviceaccount:trino:trino"
+        description: comma-separated service accounts that get read-only access to the catalog
   templates:
     - name: bootstrap
+      inputs:
+        parameters:
+          - name: readers
       nodeSelector:
         kubernetes.azure.com/agentpool: system # a few HTTP calls: no spot node needed
       securityContext:
@@ -24,6 +34,9 @@ spec:
       script:
         image: python:3.13-alpine
         command: [python3]
+        env:
+          - name: READERS
+            value: "{{inputs.parameters.readers}}"
         envFrom:
           - configMapRef:
               name: lichess-config # LICHESS_DEST, LICHESS_CATALOG_URI, LICHESS_WAREHOUSE
@@ -83,4 +96,19 @@ spec:
               print("create warehouse:", status, body)
               if status not in (200, 201):
                   sys.exit(1)
-          print(f"ready: warehouse {name} at abfss://{container}@{account}.dfs.core.windows.net/{prefix}")
+          # Read-only users: provision them, then describe + select on the project.
+          readers = [f"kubernetes~{r.strip()}" for r in os.environ.get("READERS", "").split(",") if r.strip()]
+          status, current = call("GET", "/management/v1/permissions/project/assignments")
+          have = {(a.get("user"), a.get("type")) for a in (current or {}).get("assignments", [])} if status == 200 else set()
+          writes = []
+          for user in readers:
+              status, body = call("POST", "/management/v1/user", {
+                  "id": user, "name": user.split("~", 1)[1], "user-type": "application", "update-if-exists": True})
+              print("provision user:", user, status)
+              writes += [{"type": t, "user": user} for t in ("describe", "select") if (user, t) not in have]
+          if writes:
+              status, body = call("POST", "/management/v1/permissions/project/assignments", {"writes": writes, "deletes": []})
+              print("grant read:", status, body)
+              if status not in (200, 204):
+                  sys.exit(1)
+          print(f"ready: warehouse {name} at abfss://{container}@{account}.dfs.core.windows.net/{prefix}; readers {readers or 'none'}")

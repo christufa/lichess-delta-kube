@@ -1,0 +1,44 @@
+# cert-manager: issues TLS certificates inside the cluster from our private CA
+# (deploy/pki). Public hostnames get their certificates at Cloudflare, not here.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cert-manager
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: lichess
+  source:
+    repoURL: https://charts.jetstack.io
+    chart: cert-manager
+    targetRevision: v1.21.1
+    helm:
+      releaseName: cert-manager
+      valuesObject:
+        crds:
+          enabled: true
+          keep: true
+        resources:
+          requests: { cpu: 10m, memory: 64Mi }
+        webhook:
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+        cainjector:
+          resources:
+            requests: { cpu: 10m, memory: 64Mi }
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cert-manager
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff: { duration: 30s, factor: 2, maxDuration: 5m }

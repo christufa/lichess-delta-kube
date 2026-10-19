@@ -1,0 +1,33 @@
+# Default-deny ingress for trino. Allowed in:
+#   - pods in trino (coordinator ↔ workers)
+#   - lichess → coordinator :8443 (notebooks, smoke workflow); the chess apps get the
+#     same rule when they arrive (API, MCP)
+#   - kube-system → metrics (Azure Managed Prometheus), later
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: trino
+spec:
+  endpointSelector: {}
+  ingress:
+    - fromEndpoints:
+        - {} # any pod in this namespace
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-clients
+  namespace: trino
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: trino
+      app.kubernetes.io/component: coordinator
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: lichess
+      toPorts:
+        - ports:
+            - { port: "8443", protocol: TCP }

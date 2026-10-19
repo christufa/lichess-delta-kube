@@ -1,0 +1,226 @@
+# Trino: interactive SQL over the lake (catalog `lake` = Lakekeeper, read-only).
+#
+# - Clients sign in with a projected Kubernetes service account token (audience "trino"),
+#   validated against the AKS OIDC issuer's keys (JWT). The Trino user is the service
+#   account name: lichess-jobs (notebooks, jobs), chess-api, chess-mcp.
+# - TLS from the private CA (deploy/pki); clients trust it via ConfigMap internal-ca.
+# - What each user may read: file-based access control below (rules.json).
+# - Catalog: Lakekeeper with a long-lived service account token (Secret trino-catalog-token);
+#   Lakekeeper grants it describe+select only. Lake files: read with id-lichess-trino
+#   (workload identity, Storage Blob Data Reader). The catalog is read_only in Trino too.
+# - Coordinator on the system pool also runs queries (include-coordinator), so small queries
+#   need no spot node. Workers (spot, 0 by default) for big scans:
+#     kubectl scale deploy -n trino trino-worker --replicas=2
+# ApplicationSet so the client ID and the AKS OIDC issuer come from the cluster facts.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: trino
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - clusters:
+        selector:
+          matchLabels:
+            lichess.generops.dev/facts: "true"
+  template:
+    metadata:
+      name: trino
+      annotations:
+        argocd.argoproj.io/sync-wave: "3"
+    spec:
+      project: lichess
+      source:
+        repoURL: https://trinodb.github.io/charts
+        chart: trino
+        targetRevision: 1.45.0 # Trino 484
+        helm:
+          releaseName: trino
+          valuesObject:
+            serviceAccount:
+              create: true
+              name: trino
+              annotations:
+                azure.workload.identity/client-id: '{{ index .metadata.annotations "lichess.generops.dev/trino-client-id" }}'
+            server:
+              workers: 0
+              config:
+                https:
+                  enabled: true
+                  port: 8443
+                  keystore:
+                    path: /etc/trino/tls/tls-combined.pem
+                query:
+                  maxMemory: 3GB
+              coordinatorExtraConfig: |
+                http-server.authentication.type=JWT
+                http-server.authentication.jwt.key-file={{ index .metadata.annotations "lichess.generops.dev/aks-oidc-issuer" }}openid/v1/jwks
+                http-server.authentication.jwt.required-issuer={{ index .metadata.annotations "lichess.generops.dev/aks-oidc-issuer" }}
+                http-server.authentication.jwt.required-audience=trino
+                http-server.authentication.jwt.principal-field=sub
+                http-server.authentication.jwt.user-mapping.pattern=system:serviceaccount:[^:]+:(.+)
+                internal-communication.shared-secret=${ENV:TRINO_SHARED_SECRET}
+              workerExtraConfig: |
+                internal-communication.shared-secret=${ENV:TRINO_SHARED_SECRET}
+            env:
+              - name: TRINO_SHARED_SECRET
+                valueFrom: { secretKeyRef: { name: trino-shared-secret, key: password } }
+              - name: LAKEKEEPER_TOKEN
+                valueFrom: { secretKeyRef: { name: trino-catalog-token, key: token } }
+            catalogs:
+              tpch: null
+              tpcds: null
+              lake: |
+                connector.name=iceberg
+                iceberg.catalog.type=rest
+                iceberg.rest-catalog.uri=http://lakekeeper.lakekeeper.svc.cluster.local:8181/catalog
+                iceberg.rest-catalog.warehouse=lichess
+                iceberg.rest-catalog.security=OAUTH2
+                iceberg.rest-catalog.oauth2.token=${ENV:LAKEKEEPER_TOKEN}
+                iceberg.rest-catalog.oauth2.token-refresh-enabled=false
+                iceberg.rest-catalog.oauth2.token-exchange-enabled=false
+                iceberg.security=read_only
+                fs.azure.enabled=true
+                azure.auth-type=DEFAULT
+            accessControl:
+              type: configmap
+              refreshPeriod: 60s
+              configFile: rules.json
+              rules:
+                rules.json: |
+                  {
+                    "catalogs": [
+                      {"user": "lichess-jobs", "catalog": "(lake|system)", "allow": "read-only"},
+                      {"user": "chess-(api|mcp)", "catalog": "(lake|system)", "allow": "read-only"},
+                      {"catalog": ".*", "allow": "none"}
+                    ],
+                    "schemas": [
+                      {"user": "lichess-jobs", "catalog": "lake", "schema": ".*", "owner": false},
+                      {"user": "chess-mcp", "catalog": "lake", "schema": "(curated|gold)", "owner": false},
+                      {"user": "chess-api", "catalog": "lake", "schema": "gold", "owner": false}
+                    ],
+                    "tables": [
+                      {"user": "lichess-jobs", "catalog": "lake", "privileges": ["SELECT"]},
+                      {"user": "chess-mcp", "catalog": "lake", "schema": "(curated|gold)", "privileges": ["SELECT"]},
+                      {"user": "chess-api", "catalog": "lake", "schema": "gold", "privileges": ["SELECT"]},
+                      {"user": "lichess-jobs|chess-(api|mcp)", "catalog": "system", "privileges": ["SELECT"]}
+                    ],
+                    "system_information": [
+                      {"user": "lichess-jobs", "allow": ["read"]}
+                    ]
+                  }
+            coordinator:
+              labels:
+                azure.workload.identity/use: "true"
+              nodeSelector:
+                kubernetes.azure.com/agentpool: system
+              jvm:
+                maxHeapSize: 3G
+              config:
+                nodeScheduler:
+                  includeCoordinator: true
+                query:
+                  maxMemoryPerNode: 1GB
+              resources:
+                requests: { cpu: 500m, memory: 4Gi }
+                limits: { memory: 4608Mi }
+              secretMounts:
+                - name: tls
+                  secretName: trino-tls
+                  path: /etc/trino/tls
+            worker:
+              labels:
+                azure.workload.identity/use: "true"
+              nodeSelector:
+                workload: batch
+              tolerations:
+                - key: kubernetes.azure.com/scalesetpriority
+                  operator: Equal
+                  value: spot
+                  effect: NoSchedule
+              jvm:
+                maxHeapSize: 44G
+              config:
+                query:
+                  maxMemoryPerNode: 28GB
+              resources:
+                requests: { cpu: "7", memory: 52Gi }
+                limits: { memory: 54Gi }
+              gracefulShutdown:
+                enabled: true # spot eviction: let running tasks finish
+                gracePeriodSeconds: 60
+              terminationGracePeriodSeconds: 130
+            securityContext:
+              runAsNonRoot: true
+              runAsUser: 1000
+              runAsGroup: 1000
+              seccompProfile: { type: RuntimeDefault }
+            containerSecurityContext:
+              allowPrivilegeEscalation: false
+              capabilities: { drop: [ALL] }
+            extraManifests:
+              # TLS for the coordinator from the private CA; tls-combined.pem is what Trino reads.
+              - |
+                apiVersion: cert-manager.io/v1
+                kind: Certificate
+                metadata:
+                  name: trino-tls
+                spec:
+                  secretName: trino-tls
+                  dnsNames: [trino, trino.trino, trino.trino.svc, trino.trino.svc.cluster.local]
+                  duration: 2160h
+                  renewBefore: 720h
+                  privateKey: { algorithm: ECDSA, size: 256, rotationPolicy: Always }
+                  additionalOutputFormats:
+                    - type: CombinedPEM
+                  issuerRef: { kind: ClusterIssuer, name: internal-ca }
+              # Long-lived token for the catalog (Trino can only send a static token).
+              - |
+                apiVersion: v1
+                kind: Secret
+                type: kubernetes.io/service-account-token
+                metadata:
+                  name: trino-catalog-token
+                  annotations:
+                    kubernetes.io/service-account.name: trino
+              # Shared secret for coordinator ↔ worker calls, generated once in-cluster.
+              - |
+                apiVersion: generators.external-secrets.io/v1alpha1
+                kind: Password
+                metadata:
+                  name: trino-shared-secret
+                spec: { length: 48, digits: 10, symbols: 0, noUpper: false, allowRepeat: true }
+              - |
+                apiVersion: external-secrets.io/v1
+                kind: ExternalSecret
+                metadata:
+                  name: trino-shared-secret
+                spec:
+                  refreshInterval: "0"
+                  target: { name: trino-shared-secret, creationPolicy: Owner }
+                  dataFrom:
+                    - sourceRef:
+                        generatorRef:
+                          apiVersion: generators.external-secrets.io/v1alpha1
+                          kind: Password
+                          name: trino-shared-secret
+      destination:
+        server: '{{ .server }}'
+        namespace: trino
+      ignoreDifferences:
+        - group: apps
+          kind: Deployment
+          name: trino-worker
+          jsonPointers: [/spec/replicas] # scaled by hand (or later by KEDA)
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - RespectIgnoreDifferences=true
+        retry:
+          limit: 10
+          backoff: { duration: 30s, factor: 2, maxDuration: 5m }

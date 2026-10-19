@@ -1,8 +1,8 @@
 # Default-deny ingress for lakekeeper. Allowed in:
 #   - pods in lakekeeper (catalog → its Postgres and OpenFGA, OpenFGA → its Postgres)
 #   - lichess → the catalog API (Spark drivers, notebooks, the bootstrap workflow)
+#   - trino → the catalog API (Trino reads tables; Lakekeeper grants it describe+select)
 #   - cnpg-system → the Postgres instance manager (status, failover, backups)
-# Trino gets its own allow rule when it arrives (#64).
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -27,6 +27,8 @@ spec:
     - fromEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: lichess
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: trino
       toPorts:
         - ports:
             - { port: "8181", protocol: TCP }

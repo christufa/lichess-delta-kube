@@ -1,0 +1,19 @@
+# Default-deny ingress for cert-manager (also runs trust-manager). Allowed in: its own pods
+# and the API server (cert-manager and trust-manager admission webhooks).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: cert-manager
+spec:
+  endpointSelector: {}
+  ingress:
+    - fromEndpoints:
+        - {} # any pod in this namespace
+    - fromEntities: # admission webhooks: the API server reaches them through konnectivity
+        - kube-apiserver
+        - host
+        - remote-node
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system

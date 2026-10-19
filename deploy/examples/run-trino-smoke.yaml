@@ -1,0 +1,10 @@
+# Not synced by Argo CD: Trino end to end (TLS, JWT sign-in, catalog, lake reads).
+#   kubectl create -n lichess -f deploy/examples/run-trino-smoke.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: trino-smoke-
+  namespace: lichess
+spec:
+  workflowTemplateRef:
+    name: trino-smoke

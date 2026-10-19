@@ -1,0 +1,28 @@
+# The cluster's private CA and its distribution (deploy/pki).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: pki
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: lichess
+  source:
+    repoURL: https://github.com/christufa/lichess-delta-kube.git
+    targetRevision: main
+    path: deploy/pki
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cert-manager
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - SkipDryRunOnMissingResource=true # cert-manager / trust-manager CRDs
+    retry:
+      limit: 10
+      backoff: { duration: 30s, factor: 2, maxDuration: 5m }
