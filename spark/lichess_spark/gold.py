@@ -32,7 +32,7 @@ RATING_BAND = 200
 RATING_BUCKET = 50
 COMMENTS = {
     SUMMARY: "Per month and speed (speed all = every speed): games, distinct players, results, bot games, average rating. Each game once.",
-    OPENINGS: f"Per month, speed, ECO/opening and rating band ({RATING_BAND} wide, players' average rating): games and results. Each game once.",
+    OPENINGS: f"Per month, speed, ECO/opening and rating band ({RATING_BAND} wide, average rating of both players): games and results. Each game once.",
     RATINGS: f"Per month, speed and rating bucket ({RATING_BUCKET} wide): player-games and distinct players. Each game once.",
 }
 
@@ -116,12 +116,13 @@ def ensure_table(spark, table: str, sample_df) -> None:
     spark.sql("CREATE NAMESPACE IF NOT EXISTS lake.gold")
     if not wap.table_exists(spark, table):
         ddl = sample_df._jdf.schema().toDDL()
+        comment = COMMENTS[table].replace("'", "\\'")  # a quote would end the SQL string
         spark.sql(f"""
             CREATE TABLE {table} ({ddl})
             USING iceberg
             PARTITIONED BY (month)
             TBLPROPERTIES ('format-version' = '2', 'write.parquet.compression-codec' = 'zstd',
-                           'comment' = '{COMMENTS[table]}')""")
+                           'comment' = '{comment}')""")
     wap.ensure_main(spark, table, sample_df.schema)
     wap.ensure_dq_table(spark)
 
