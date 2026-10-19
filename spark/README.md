@@ -124,8 +124,32 @@ unusual is kept and counted, not dropped:
 | `game_id` unique (extra copies get `is_duplicate`); ratings in 400–4000; result decided (`*` → null); termination known; `played_at` in the month | no, counted in `dq_results` |
 
 Each row records the raw snapshot it came from (`_raw_snapshot_id`); `--pending` builds raw
-months that aren't in curated yet or were republished in raw since. `ingest-month` (and so
-`ingest-backfill`) runs it after publishing raw.
+months that aren't in curated yet or were republished in raw since.
+
+## curated.player_games and gold
+
+`jobs/build_player_games.py` turns each curated game into **two rows**, one from each
+player's side (`player`, lower-cased `player_id`, `color`, opponent, ratings, `outcome`
+win/draw/loss, `score`). Like `games`, nothing is filtered. Layout follows
+[ADR 0001](../docs/adr/0001-bucketing.md): partitioned by `month` and
+`bucket(16, player_id)`, sorted by `player_id, played_at`. Blocking checks: exactly two rows
+per game, one white and one black, player present.
+
+`jobs/build_gold.py` builds the dashboard's small tables, counting each game once
+(`NOT is_duplicate`):
+
+| Table | Grain | Measures |
+|---|---|---|
+| `lake.gold.monthly_summary` | month × speed (`all` = every speed) | games, players, white wins/draws/black wins/unfinished, bot games, average rating |
+| `lake.gold.openings` | month × speed × ECO/opening × rating band (200) | games and results |
+| `lake.gold.rating_distribution` | month × speed × rating bucket (50) | player-games, players |
+
+Each gold table's totals must reconcile with curated (games = unique curated games,
+player-games = twice that) before it publishes.
+
+Each layer records the source snapshot it was built from, so `--pending` cascades:
+raw → `curated.games` → `curated.player_games` → gold. `ingest-month` (and so
+`ingest-backfill`) runs all three builds after publishing raw.
 
 ## Adding a job
 

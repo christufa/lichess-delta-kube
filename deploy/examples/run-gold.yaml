@@ -1,0 +1,20 @@
+# Not synced by Argo CD: build the gold tables (lake.gold.*) from the curated tables (write-audit-publish).
+#   kubectl create -n lichess -f deploy/examples/run-gold.yaml
+# args: ["--pending"] = player_games months not built yet or rebuilt since,
+#       or ["--months", "2013-01,2013-02"].
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: gold-
+  namespace: lichess
+spec:
+  workflowTemplateRef:
+    name: spark-job
+  arguments:
+    parameters:
+      - name: job
+        value: build_gold
+      - name: args
+        value: '["--pending"]'
+      - name: executors
+        value: "2"

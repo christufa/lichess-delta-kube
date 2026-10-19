@@ -146,13 +146,9 @@ def transform(raw_df, raw_snapshot_id: int | None, run_id: str):
               .withColumn("_built_at", F.current_timestamp()))
 
 
-def table_exists(spark) -> bool:
-    return spark.catalog.tableExists(TABLE)
-
-
 def ensure_tables(spark, sample_df) -> None:
     spark.sql("CREATE NAMESPACE IF NOT EXISTS lake.curated")
-    if not table_exists(spark):
+    if not wap.table_exists(spark, TABLE):
         ddl = sample_df._jdf.schema().toDDL()
         spark.sql(f"""
             CREATE TABLE {TABLE} ({ddl})
@@ -189,37 +185,16 @@ def branch_stats(spark, branch: str, month: str) -> dict:
     return row.asDict()
 
 
-def raw_partition_snapshots(spark) -> dict[str, int]:
-    """month → the raw snapshot that last changed that month (on main)."""
-    if not raw.table_exists(spark):
-        return {}
-    rows = spark.sql(f"SELECT partition.month, last_updated_snapshot_id FROM {raw.TABLE}.partitions").collect()
-    return {r[0]: r[1] for r in rows}
-
-
-def built_from(spark) -> dict[str, int]:
-    """month → the raw snapshot each published curated month was built from."""
-    if not table_exists(spark) or not wap.has_main(spark, TABLE):
-        return {}
-    rows = spark.sql(f"SELECT month, max(_raw_snapshot_id) FROM {TABLE} GROUP BY month").collect()
-    return {r[0]: r[1] for r in rows}
-
-
 def pending_months(spark) -> list[str]:
     """Raw months not in curated yet, or republished in raw since curated was built."""
-    source, built = raw_partition_snapshots(spark), built_from(spark)
-    return sorted(m for m, snap in source.items() if built.get(m) != snap)
+    return wap.pending(spark, raw.TABLE, TABLE, "_raw_snapshot_id")
 
 
 def build_month(spark, month: str, run_id: str | None = None) -> list[Check]:
     """Raw → curated for one month, write-audit-publish. Returns the checks; raises nothing on a failed audit."""
     run_id = run_id or uuid.uuid4().hex
     spark.conf.set("spark.sql.session.timeZone", "UTC")  # played_at is parsed from UTC date and time
-    # Lineage first, then pin the data: if raw republishes the month in between, the data is
-    # newer than the recorded snapshot and the next --pending run just builds it again.
-    lineage = raw_partition_snapshots(spark).get(month)
-    snapshot = spark.sql(f"SELECT snapshot_id FROM {raw.TABLE}.refs WHERE name = 'main'").first()[0]
-    source = spark.sql(f"SELECT * FROM {raw.TABLE} VERSION AS OF {snapshot} WHERE month = '{month}'")
+    lineage, source = wap.pinned_month(spark, raw.TABLE, month)
     raw_rows = source.count()
 
     df = transform(source, lineage, run_id)
