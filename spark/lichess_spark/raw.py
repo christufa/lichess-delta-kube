@@ -70,10 +70,6 @@ def table_exists(spark, name: str = TABLE) -> bool:
     return spark.catalog.tableExists(name)
 
 
-def has_snapshots(spark) -> bool:
-    return spark.sql(f"SELECT 1 FROM {TABLE}.snapshots LIMIT 1").count() > 0
-
-
 def ensure_tables(spark, sample_df) -> None:
     spark.sql("CREATE NAMESPACE IF NOT EXISTS lake.raw")
     spark.sql("CREATE NAMESPACE IF NOT EXISTS lake.ops")
@@ -90,6 +86,9 @@ def ensure_tables(spark, sample_df) -> None:
               'write.target-file-size-bytes' = '268435456',
               'comment' = 'Every Lichess standard game, one row per game: PGN header tags as strings, movetext, lineage. Partitioned by month (YYYY-MM).'
             )""")
+    if not has_main(spark):
+        # An empty first snapshot on main, so every month (the first too) can branch from it.
+        spark.createDataFrame([], sample_df.schema).writeTo(TABLE).append()
     spark.sql(f"""
         CREATE TABLE IF NOT EXISTS {DQ_TABLE} (
           run_id STRING, checked_at TIMESTAMP, table_name STRING, partition STRING,
@@ -126,18 +125,12 @@ def publish_month(spark, root: str, month: str, expected_games: int | None, run_
     ensure_tables(spark, staged)
     branch = branch_name(month)
     spark.sql(f"ALTER TABLE {TABLE} DROP BRANCH IF EXISTS `{branch}`")  # leftovers from a crashed run
-    if has_snapshots(spark):
-        spark.sql(f"ALTER TABLE {TABLE} CREATE BRANCH `{branch}`")
-    # On a brand-new table the write itself creates the branch.
+    spark.sql(f"ALTER TABLE {TABLE} CREATE BRANCH `{branch}`")         # from main's current snapshot
     staged.writeTo(f"{TABLE}.branch_{branch}").overwritePartitions()
 
     checks = evaluate(month, branch_stats(spark, branch, month), expected_games)
     if all(c.passed for c in checks):
-        if has_main(spark):
-            spark.sql(f"CALL lake.system.fast_forward('{TABLE_REF}', 'main', '{branch}')")
-        else:  # first publish: main doesn't exist yet, point it at the audited snapshot
-            snap = spark.sql(f"SELECT snapshot_id FROM {TABLE}.refs WHERE name = '{branch}'").first()["snapshot_id"]
-            spark.sql(f"CALL lake.system.set_current_snapshot('{TABLE_REF}', {snap})")
+        spark.sql(f"CALL lake.system.fast_forward('{TABLE_REF}', 'main', '{branch}')")
     spark.sql(f"ALTER TABLE {TABLE} DROP BRANCH IF EXISTS `{branch}`")
     record(spark, run_id, month, checks)
     return checks
