@@ -3,9 +3,11 @@
 # when a query needs them and go away after 5 idle minutes.
 #   pod        → system node (on-demand; a kernel on spot would lose your session)
 #   notebooks  → PVC jupyter-work, mounted as $HOME (/workspace)
-#   access     → kubectl port-forward -n lichess svc/jupyter 8888 4040, then http://localhost:8888
-#                JupyterLab listens on 127.0.0.1 inside the pod, so only a port-forward
-#                (your Entra sign-in + RBAC) reaches it: no token.
+#   access     → https://chess-lab.generops.dev (Cloudflare Access, Microsoft sign-in), or
+#                kubectl port-forward -n lichess svc/jupyter 8888 4040 → http://localhost:8888
+#                JupyterLab listens on 127.0.0.1 inside the pod: the only ways in are a
+#                port-forward (Entra + RBAC) and the cloudflared sidecar below, whose tunnel
+#                only accepts requests that passed Cloudflare Access. No token.
 #
 # Stops itself after `hours`; delete the workflow to stop it earlier. One at a time (mutex).
 apiVersion: argoproj.io/v1alpha1
@@ -87,3 +89,22 @@ spec:
         volumeMounts:
           - name: work
             mountPath: /workspace
+      # Publishes 127.0.0.1:8888 as chess-lab through its own tunnel (infra/gitops/edge.tf);
+      # it stops with the notebook, so the hostname is only up while JupyterLab runs.
+      sidecars:
+        - name: cloudflared
+          image: cloudflare/cloudflared:2026.9.3
+          args: [tunnel, --no-autoupdate, --metrics=127.0.0.1:2001, --loglevel=info, run]
+          env:
+            - name: TUNNEL_TOKEN
+              valueFrom: { secretKeyRef: { name: cloudflared-lab-token, key: token } }
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { memory: 128Mi }
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+            seccompProfile: { type: RuntimeDefault }

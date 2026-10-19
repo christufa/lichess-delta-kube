@@ -20,6 +20,23 @@ locals {
       service       = "http://argo-workflows-server.argo.svc.cluster.local:2746"
       no_tls_verify = false
     }
+    # JupyterLab listens on 127.0.0.1 inside its pod, so it gets its own tunnel whose only
+    # connector is a cloudflared sidecar in that pod (deploy/lichess/workflowtemplate-jupyter.yaml).
+    # The hostname is only up while a notebook runs.
+    lab = {
+      hostname      = "${var.hostname_prefix}-lab.${var.domain}"
+      title         = "JupyterLab"
+      service       = "http://localhost:8888"
+      no_tls_verify = false
+    }
+  }
+  tunnel_hosts = {
+    aks = { for k, h in local.private_hosts : k => h if k != "lab" }
+    lab = { for k, h in local.private_hosts : k => h if k == "lab" }
+  }
+  tunnel_ids = {
+    aks = cloudflare_zero_trust_tunnel_cloudflared.aks.id
+    lab = cloudflare_zero_trust_tunnel_cloudflared.lab.id
   }
 }
 
@@ -32,6 +49,17 @@ resource "cloudflare_zero_trust_tunnel_cloudflared" "aks" {
 data "cloudflare_zero_trust_tunnel_cloudflared_token" "aks" {
   account_id = var.cloudflare_account_id
   tunnel_id  = cloudflare_zero_trust_tunnel_cloudflared.aks.id
+}
+
+resource "cloudflare_zero_trust_tunnel_cloudflared" "lab" {
+  account_id = var.cloudflare_account_id
+  name       = "aks-lichess-lab"
+  config_src = "cloudflare"
+}
+
+data "cloudflare_zero_trust_tunnel_cloudflared_token" "lab" {
+  account_id = var.cloudflare_account_id
+  tunnel_id  = cloudflare_zero_trust_tunnel_cloudflared.lab.id
 }
 
 resource "cloudflare_zero_trust_access_identity_provider" "entra" {
@@ -75,7 +103,7 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "aks" {
   tunnel_id  = cloudflare_zero_trust_tunnel_cloudflared.aks.id
   config = {
     ingress = concat(
-      [for k, h in local.private_hosts : {
+      [for k, h in local.tunnel_hosts.aks : {
         hostname = h.hostname
         service  = h.service
         origin_request = {
@@ -92,13 +120,34 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "aks" {
   }
 }
 
+resource "cloudflare_zero_trust_tunnel_cloudflared_config" "lab" {
+  account_id = var.cloudflare_account_id
+  tunnel_id  = cloudflare_zero_trust_tunnel_cloudflared.lab.id
+  config = {
+    ingress = concat(
+      [for k, h in local.tunnel_hosts.lab : {
+        hostname = h.hostname
+        service  = h.service
+        origin_request = {
+          access = {
+            required  = true
+            team_name = var.cloudflare_team_name
+            aud_tag   = [cloudflare_zero_trust_access_application.private[k].aud]
+          }
+        }
+      }],
+      [{ service = "http_status:404" }],
+    )
+  }
+}
+
 resource "cloudflare_dns_record" "private" {
   for_each = local.private_hosts
 
   zone_id = var.cloudflare_zone_id
   name    = each.value.hostname
   type    = "CNAME"
-  content = "${cloudflare_zero_trust_tunnel_cloudflared.aks.id}.cfargotunnel.com"
+  content = "${each.key == "lab" ? local.tunnel_ids.lab : local.tunnel_ids.aks}.cfargotunnel.com"
   proxied = true
   ttl     = 1 # automatic (proxied)
   comment = "lichess-delta-kube: Cloudflare Tunnel (infra/gitops/edge.tf)"
@@ -121,3 +170,15 @@ resource "kubernetes_secret_v1" "cloudflared_token" {
     token = data.cloudflare_zero_trust_tunnel_cloudflared_token.aks.token
   }
 }
+
+# Token for the JupyterLab sidecar: in lichess, where the notebook pod runs.
+resource "kubernetes_secret_v1" "cloudflared_lab_token" {
+  metadata {
+    name      = "cloudflared-lab-token"
+    namespace = kubernetes_namespace_v1.lichess.metadata[0].name
+  }
+  data = {
+    token = data.cloudflare_zero_trust_tunnel_cloudflared_token.lab.token
+  }
+}
+

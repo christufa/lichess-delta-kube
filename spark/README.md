@@ -43,9 +43,11 @@ kubectl create -n lichess -f deploy/examples/run-jupyter.yaml
 kubectl port-forward -n lichess svc/jupyter 8888 4040
 ```
 
-Open http://localhost:8888 and start with `examples/getting-started.ipynb`. There is no token:
-JupyterLab listens on 127.0.0.1 inside its pod, so the only way in is a port-forward, which
-needs your Entra sign-in and RBAC on the cluster.
+Open **https://chess-lab.generops.dev** (Microsoft sign-in through Cloudflare Access) or, with
+the port-forward, http://localhost:8888, and start with `examples/getting-started.ipynb`.
+There is no token: JupyterLab listens on 127.0.0.1 inside its pod, and the only ways in are the
+port-forward (your Entra sign-in + RBAC) and a cloudflared sidecar whose tunnel only accepts
+requests that passed Cloudflare Access. chess-lab is only up while a notebook runs.
 The Spark UI is at http://localhost:4040 while a session is running.
 
 ```python
