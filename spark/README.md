@@ -54,7 +54,12 @@ The Spark UI is at http://localhost:4040 while a session is running.
 from lichess_spark import dest_root, notebook_spark
 spark = notebook_spark()            # max_executors=2 to stay smaller
 games = spark.read.option("recursiveFileLookup", "true").parquet(f"{dest_root()}/raw/games")
+spark.sql("SHOW NAMESPACES IN lake").show()   # Iceberg tables through Lakekeeper
 ```
+
+In the cluster every session also has the Iceberg catalog **`lake`** (Lakekeeper, REST,
+default catalog): `spark.table("lake.ops.catalog_smoke")`, `CREATE TABLE lake.raw.… USING iceberg`.
+Lakekeeper vends a SAS token scoped to each table; set `LICHESS_CATALOG_URI` to use it elsewhere.
 
 - **VS Code:** open a notebook from the repo, then *Select Kernel → Existing Jupyter Server →*
   `http://localhost:8888`. The file stays in your repo and the kernel runs in the cluster.

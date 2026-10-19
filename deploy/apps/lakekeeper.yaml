@@ -1,0 +1,87 @@
+# Lakekeeper: the Iceberg REST catalog (lake.raw.*, lake.curated.*, lake.gold.*).
+# - Signs in to the lake with workload identity (id-lichess-lakekeeper) and vends
+#   short-lived, table-scoped SAS tokens to Spark/Trino.
+# - Database: CloudNativePG cluster lakekeeper-pg (deploy/lakekeeper).
+# - Reachable only from lichess (Spark, notebooks, workflows) and, later, Trino
+#   (deploy/network-policies/lakekeeper.yaml). Authentication + OpenFGA authorization: follow-up.
+# ApplicationSet so the identity's client ID comes from the cluster facts.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: lakekeeper
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - clusters:
+        selector:
+          matchLabels:
+            lichess.generops.dev/facts: "true"
+  template:
+    metadata:
+      name: lakekeeper
+      annotations:
+        argocd.argoproj.io/sync-wave: "2"
+    spec:
+      project: lichess
+      source:
+        repoURL: https://lakekeeper.github.io/lakekeeper-charts
+        chart: lakekeeper
+        targetRevision: 0.12.0 # Lakekeeper 0.13.3
+        helm:
+          releaseName: lakekeeper
+          valuesObject:
+            catalog:
+              replicas: 1
+              podLabels:
+                azure.workload.identity/use: "true"
+              nodeSelector:
+                kubernetes.azure.com/agentpool: system
+              resources:
+                requests: { cpu: 50m, memory: 128Mi }
+                limits: { memory: 512Mi }
+              podSecurityContext:
+                runAsNonRoot: true
+                seccompProfile: { type: RuntimeDefault }
+              containerSecurityContext:
+                allowPrivilegeEscalation: false
+                capabilities: { drop: [ALL] }
+              config:
+                LAKEKEEPER__ENABLE_AZURE_SYSTEM_CREDENTIALS: "true"
+            serviceAccount:
+              create: true
+              name: lakekeeper
+              annotations:
+                azure.workload.identity/client-id: '{{ index .metadata.annotations "lichess.generops.dev/lakekeeper-client-id" }}'
+            secretBackend:
+              type: Postgres
+              postgres:
+                encryptionKeySecret: lakekeeper-encryption
+                encryptionKeySecretKey: password
+            postgresql:
+              enabled: false
+            externalDatabase:
+              type: postgres
+              host_read: lakekeeper-pg-rw
+              host_write: lakekeeper-pg-rw
+              port: 5432
+              database: catalog
+              userSecret: lakekeeper-pg-app
+              userSecretKey: username
+              passwordSecret: lakekeeper-pg-app
+              passwordSecretKey: password
+            authz:
+              backend: allowall
+      destination:
+        server: '{{ .server }}'
+        namespace: lakekeeper
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+        retry:
+          limit: 10
+          backoff: { duration: 30s, factor: 2, maxDuration: 5m }

@@ -1,0 +1,32 @@
+# Lakekeeper encrypts secrets it stores (warehouse storage credentials) with this key. Our
+# warehouse uses workload identity, so nothing secret is stored, but the key is required.
+# Generated once in-cluster by External Secrets (Password generator) and never rotated:
+# a new key would make stored secrets unreadable.
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: lakekeeper-encryption
+  namespace: lakekeeper
+spec:
+  length: 48
+  digits: 10
+  symbols: 0
+  noUpper: false
+  allowRepeat: true
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: lakekeeper-encryption
+  namespace: lakekeeper
+spec:
+  refreshInterval: "0" # generate once
+  target:
+    name: lakekeeper-encryption
+    creationPolicy: Owner
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: lakekeeper-encryption

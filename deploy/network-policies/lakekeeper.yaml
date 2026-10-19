@@ -1,0 +1,50 @@
+# Default-deny ingress for lakekeeper. Allowed in:
+#   - pods in lakekeeper (catalog → its Postgres)
+#   - lichess → the catalog API (Spark drivers, notebooks, the bootstrap workflow)
+#   - cnpg-system → the Postgres instance manager (status, failover, backups)
+# Trino gets its own allow rule when it arrives (#64).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: lakekeeper
+spec:
+  endpointSelector: {}
+  ingress:
+    - fromEndpoints:
+        - {} # any pod in this namespace
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-catalog-clients
+  namespace: lakekeeper
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: lakekeeper
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: lichess
+      toPorts:
+        - ports:
+            - { port: "8181", protocol: TCP }
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-cnpg-operator
+  namespace: lakekeeper
+spec:
+  endpointSelector:
+    matchLabels:
+      cnpg.io/cluster: lakekeeper-pg
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: cnpg-system
+      toPorts:
+        - ports:
+            - { port: "8000", protocol: TCP }
+            - { port: "5432", protocol: TCP }

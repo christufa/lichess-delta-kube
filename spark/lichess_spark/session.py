@@ -9,6 +9,11 @@ How Spark signs in to ADLS (first match wins):
       Workload identity, injected into pods labelled azure.workload.identity/use=true.
   AZURE_STORAGE_SAS_TOKEN
       A container SAS, e.g. the user-delegation SAS from ingest/.env, for local runs.
+
+The Iceberg catalog (if LICHESS_CATALOG_URI is set, as in the cluster):
+  LICHESS_CATALOG_URI  Lakekeeper's Iceberg REST endpoint, …/catalog
+  LICHESS_WAREHOUSE    warehouse name (default "lichess")
+  Tables are lake.<namespace>.<table>; Lakekeeper vends a SAS token scoped to each table.
 """
 from __future__ import annotations
 
@@ -16,6 +21,7 @@ import os
 from urllib.parse import urlparse
 
 WI_PROVIDER = "org.apache.hadoop.fs.azurebfs.oauth2.WorkloadIdentityTokenProvider"
+CATALOG = "lake"
 
 
 def dest_root(env=None) -> str:
@@ -64,12 +70,32 @@ def spot_conf(env=None) -> dict[str, str]:
     }
 
 
+def catalog_conf(env=None) -> dict[str, str]:
+    """Iceberg REST catalog `lake` (Lakekeeper) with vended credentials; empty without LICHESS_CATALOG_URI."""
+    env = os.environ if env is None else env
+    uri = env.get("LICHESS_CATALOG_URI")
+    if not uri:
+        return {}
+    c = f"spark.sql.catalog.{CATALOG}"
+    return {
+        "spark.sql.extensions": "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
+        c: "org.apache.iceberg.spark.SparkCatalog",
+        f"{c}.type": "rest",
+        f"{c}.uri": uri,
+        f"{c}.warehouse": env.get("LICHESS_WAREHOUSE", "lichess"),
+        f"{c}.io-impl": "org.apache.iceberg.azure.adlsv2.ADLSFileIO",
+        # Ask Lakekeeper for a SAS token scoped to each table instead of using our own identity.
+        f"{c}.header.X-Iceberg-Access-Delegation": "vended-credentials",
+        "spark.sql.defaultCatalog": CATALOG,
+    }
+
+
 def get_spark(app_name: str, extra: dict[str, str] | None = None, env=None):
     from pyspark.sql import SparkSession
 
     builder = SparkSession.builder.appName(app_name)
     conf = {**storage_conf(env), **(spot_conf(env) if urlparse(dest_root(env)).scheme == "abfss" else {}),
-            **(extra or {})}
+            **catalog_conf(env), **(extra or {})}
     for key, value in conf.items():
         builder = builder.config(key, value)
     return builder.getOrCreate()

@@ -37,3 +37,19 @@ def test_missing_settings_fail_clearly():
 def test_spot_fallback_storage_lives_in_the_lake():
     assert spot_conf({"LICHESS_DEST": DEST + "/"})["spark.storage.decommission.fallbackStorage.path"] == \
         DEST + "/spark/fallback/"
+
+
+def test_catalog_conf_off_without_uri():
+    from lichess_spark.session import catalog_conf
+    assert catalog_conf({}) == {}
+
+
+def test_catalog_conf_rest_with_vended_credentials():
+    from lichess_spark.session import catalog_conf
+    conf = catalog_conf({"LICHESS_CATALOG_URI": "http://lakekeeper:8181/catalog"})
+    assert conf["spark.sql.catalog.lake.type"] == "rest"
+    assert conf["spark.sql.catalog.lake.uri"] == "http://lakekeeper:8181/catalog"
+    assert conf["spark.sql.catalog.lake.warehouse"] == "lichess"
+    assert conf["spark.sql.catalog.lake.header.X-Iceberg-Access-Delegation"] == "vended-credentials"
+    assert conf["spark.sql.defaultCatalog"] == "lake"
+    assert "IcebergSparkSessionExtensions" in conf["spark.sql.extensions"]
