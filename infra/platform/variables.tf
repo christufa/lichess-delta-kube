@@ -25,3 +25,9 @@ variable "soft_delete_days" {
   type        = number
   default     = 7
 }
+
+variable "staging_retention_days" {
+  description = "Days to keep landed Parquet (bootstrap/raw/games/) before the lifecycle rule deletes it; months are published into lake.raw.games long before"
+  type        = number
+  default     = 14
+}

@@ -2,7 +2,8 @@
 # at a time (4 = the batch pool's max_nodes = the 32 spot vCPU quota).
 #
 #   plan:  lichess-ingest plan --json  -> months in range that have no manifest yet
-#   month: ingest-month for each of them (fan-out with withParam)
+#   month: ingest-month for each of them (fan-out with withParam): land the month, then
+#          publish it into lake.raw.games (one publisher at a time, write-audit-publish)
 #
 # Months already being processed elsewhere (the PC, another workflow) are claimed
 # in the lake; their pods log "claimed by …; skipping" and finish quickly.
@@ -26,6 +27,9 @@ spec:
         value: "6"
       - name: download
         value: auto
+      - name: publish
+        value: "true"
+        description: publish each month into lake.raw.games after it lands
 
   # ingest-month's container mounts this volume; templates referenced from another
   # WorkflowTemplate use the calling workflow's volumes.
@@ -46,13 +50,14 @@ spec:
         - - name: month
             templateRef:
               name: ingest-month
-              template: ingest
+              template: ingest-and-publish
             arguments:
               parameters:
                 - { name: months, value: "{{item}}" }
                 - { name: image-tag, value: "{{workflow.parameters.image-tag}}" }
                 - { name: workers, value: "{{workflow.parameters.workers}}" }
                 - { name: download, value: "{{workflow.parameters.download}}" }
+                - { name: publish, value: "{{workflow.parameters.publish}}" }
             withParam: "{{steps.plan.outputs.result}}"
             continueOn:
               failed: true # one bad month shouldn't stop the others; re-run the backfill to retry it
