@@ -21,6 +21,11 @@ spec:
         crds:
           enabled: true
           keep: true
+        # Leader-election Roles default to kube-system, which the lichess project may not
+        # touch (and shouldn't); keep them in cert-manager's own namespace.
+        global:
+          leaderElection:
+            namespace: cert-manager
         resources:
           requests: { cpu: 10m, memory: 64Mi }
         webhook:
