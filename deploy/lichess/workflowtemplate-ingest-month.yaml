@@ -1,5 +1,7 @@
 # Ingest one or more Lichess months into the lake (raw Parquet + manifests), on a
-# spot batch node, signed in as the jobs identity (workload identity, no secrets).
+# spot batch node, signed in as the jobs identity (workload identity, no secrets),
+# then publish them into the Iceberg table lake.raw.games (write-audit-publish:
+# spark/jobs/register_raw_games.py). A month that fails its checks stays out of the table.
 # Spot node, identity label, service account and log archiving come from the
 # controller's workflowDefaults (deploy/apps/argo-workflows.yaml).
 #
@@ -13,7 +15,7 @@ metadata:
   name: ingest-month
   namespace: lichess
 spec:
-  entrypoint: ingest
+  entrypoint: ingest-and-publish
   activeDeadlineSeconds: 43200 # 12 h cap for the whole workflow
   arguments:
     parameters:
@@ -28,6 +30,9 @@ spec:
       - name: download
         value: auto
         description: torrent, http, or auto (torrent; the image ships aria2c)
+      - name: publish
+        value: "true"
+        description: publish landed months into lake.raw.games afterwards ("false" = land only)
 
   volumes:
     - name: work
@@ -35,6 +40,48 @@ spec:
         sizeLimit: 120Gi # downloads (~35 GB for the largest month) + Parquet staging
 
   templates:
+    - name: ingest-and-publish
+      inputs:
+        parameters:
+          - name: months
+          - name: image-tag
+          - name: workers
+          - name: download
+            value: auto
+          - name: publish
+            value: "true"
+      steps:
+        - - name: ingest
+            template: ingest
+            arguments:
+              parameters:
+                - { name: months, value: "{{inputs.parameters.months}}" }
+                - { name: image-tag, value: "{{inputs.parameters.image-tag}}" }
+                - { name: workers, value: "{{inputs.parameters.workers}}" }
+                - { name: download, value: "{{inputs.parameters.download}}" }
+        - - name: publish
+            template: publish
+            when: "{{inputs.parameters.publish}} == true"
+
+    # One publisher at a time (parallel backfill months would race to fast-forward the
+    # table's main branch). --pending publishes every landed month not in the table yet,
+    # so whichever month's run gets the lock first also picks up the others' months.
+    - name: publish
+      synchronization:
+        mutexes:
+          - name: raw-games-publish
+      steps:
+        - - name: register
+            templateRef:
+              name: spark-job
+              template: spark
+            arguments:
+              parameters:
+                - { name: job, value: register_raw_games }
+                - { name: args, value: '["--pending"]' }
+                - { name: executors, value: "1" }
+                - { name: image-tag, value: main }
+
     - name: ingest
       inputs:
         parameters:
