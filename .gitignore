@@ -16,3 +16,4 @@ build/
 *.egg-info/
 ingest/work/
 .ipynb_checkpoints/
+.ruff_cache/

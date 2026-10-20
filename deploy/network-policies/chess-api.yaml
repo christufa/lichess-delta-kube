@@ -1,0 +1,69 @@
+# chess-api: default-deny in both directions, the first namespace with egress rules too.
+# The API serves the public internet (through cloudflared) and only needs Trino, so a
+# compromised pod can reach nothing else.
+#
+# Allowed in:
+#   - cloudflared → :8000 (the chess.generops.dev/api route, #45)
+#   - kubelet probes: Cilium always allows the local node (host) to reach its pods
+# Allowed out:
+#   - Trino coordinator :8443
+#   - kube-dns :53 (to resolve trino.trino.svc)
+# An OpenTelemetry collector, once there is one, needs its own egress rule here.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: default-deny
+  namespace: chess-api
+spec:
+  endpointSelector: {}
+  ingress:
+    - fromEndpoints:
+        - {} # any pod in this namespace
+  egress:
+    - toEndpoints:
+        - {} # any pod in this namespace
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-cloudflared
+  namespace: chess-api
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: chess-api
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: cloudflared
+            app.kubernetes.io/name: cloudflared
+      toPorts:
+        - ports:
+            - { port: "8000", protocol: TCP }
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-trino-and-dns
+  namespace: chess-api
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: chess-api
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: trino
+            app.kubernetes.io/name: trino
+            app.kubernetes.io/component: coordinator
+      toPorts:
+        - ports:
+            - { port: "8443", protocol: TCP }
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - { port: "53", protocol: UDP }
+            - { port: "53", protocol: TCP }

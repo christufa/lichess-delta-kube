@@ -1,0 +1,51 @@
+[project]
+name = "chess-api"
+version = "0.1.0"
+description = "Read-only data API over the gold tables (lake.gold.*) for the public dashboard"
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+# Exact pins: uv.lock pins the whole tree, Renovate proposes the bumps.
+dependencies = [
+    "cachetools==7.2.4",
+    "fastapi==0.156.2",
+    "opentelemetry-api==1.45.1",
+    "opentelemetry-exporter-otlp-proto-http==1.45.1",
+    "opentelemetry-instrumentation-fastapi==0.66b1",
+    "opentelemetry-instrumentation-requests==0.66b1",
+    "opentelemetry-sdk==1.45.1",
+    "pydantic==2.14.1",
+    "pydantic-settings==2.16.1",
+    "trino==0.340.0",
+    "uvicorn==0.54.0",
+]
+
+[project.scripts]
+chess-api = "chess_api:main"
+
+[build-system]
+requires = ["uv_build>=0.13.1,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "httpx2==2.15.1",
+    "jsonschema==4.26.0",
+    "pytest==9.1.1",
+    "ruff==0.17.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-p no:cacheprovider"
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S"]
+ignore = ["S101"] # assert is how pytest checks
+
+[tool.ruff.lint.per-file-ignores]
+"src/chess_api/queries.py" = ["S608"] # SQL is built from constants; values go in as parameters
+"tests/*" = ["S105", "S106"] # fake tokens

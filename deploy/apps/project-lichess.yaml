@@ -42,6 +42,8 @@ spec:
       namespace: cert-manager
     - server: https://kubernetes.default.svc
       namespace: trino
+    - server: https://kubernetes.default.svc
+      namespace: chess-api
   # Charts like Argo Workflows install CRDs and cluster roles.
   clusterResourceWhitelist:
     - group: "*"

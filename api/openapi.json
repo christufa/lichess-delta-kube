@@ -1,0 +1,927 @@
+{
+  "components": {
+    "schemas": {
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "Health": {
+        "properties": {
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "Health",
+        "type": "object"
+      },
+      "Months": {
+        "properties": {
+          "months": {
+            "description": "Months with data, oldest first",
+            "items": {
+              "description": "YYYY-MM",
+              "examples": [
+                "2015-12"
+              ],
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+              "type": "string"
+            },
+            "title": "Months",
+            "type": "array"
+          }
+        },
+        "required": [
+          "months"
+        ],
+        "title": "Months",
+        "type": "object"
+      },
+      "Opening": {
+        "properties": {
+          "black_wins": {
+            "title": "Black Wins",
+            "type": "integer"
+          },
+          "draws": {
+            "title": "Draws",
+            "type": "integer"
+          },
+          "eco": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eco"
+          },
+          "games": {
+            "title": "Games",
+            "type": "integer"
+          },
+          "opening": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opening"
+          },
+          "unfinished": {
+            "description": "Games without a decided result",
+            "title": "Unfinished",
+            "type": "integer"
+          },
+          "white_wins": {
+            "title": "White Wins",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "white_wins",
+          "draws",
+          "black_wins",
+          "unfinished",
+          "eco",
+          "opening",
+          "games"
+        ],
+        "title": "Opening",
+        "type": "object"
+      },
+      "Openings": {
+        "properties": {
+          "band_width": {
+            "default": 200,
+            "title": "Band Width",
+            "type": "integer"
+          },
+          "from_month": {
+            "description": "YYYY-MM",
+            "examples": [
+              "2015-12"
+            ],
+            "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+            "title": "From Month",
+            "type": "string"
+          },
+          "openings": {
+            "description": "Most played first",
+            "items": {
+              "$ref": "#/components/schemas/Opening"
+            },
+            "title": "Openings",
+            "type": "array"
+          },
+          "rating_band": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Lower bound of the 200-point band (players' average rating); null = every band",
+            "title": "Rating Band"
+          },
+          "speed": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Speed"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "null = every speed"
+          },
+          "to_month": {
+            "description": "YYYY-MM",
+            "examples": [
+              "2015-12"
+            ],
+            "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+            "title": "To Month",
+            "type": "string"
+          },
+          "total_games": {
+            "description": "Games in the selection, across every opening",
+            "title": "Total Games",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "from_month",
+          "to_month",
+          "speed",
+          "rating_band",
+          "total_games",
+          "openings"
+        ],
+        "title": "Openings",
+        "type": "object"
+      },
+      "Problem": {
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "Problem",
+        "type": "object"
+      },
+      "RatingBucket": {
+        "properties": {
+          "player_games": {
+            "description": "Games counted once per player",
+            "title": "Player Games",
+            "type": "integer"
+          },
+          "players": {
+            "description": "Distinct players",
+            "title": "Players",
+            "type": "integer"
+          },
+          "rating_bucket": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Lower bound of a 50-point bucket; null = unrated",
+            "title": "Rating Bucket"
+          },
+          "speed": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Speed"
+          }
+        },
+        "required": [
+          "speed",
+          "rating_bucket",
+          "player_games",
+          "players"
+        ],
+        "title": "RatingBucket",
+        "type": "object"
+      },
+      "RatingDistribution": {
+        "properties": {
+          "bucket_width": {
+            "default": 50,
+            "title": "Bucket Width",
+            "type": "integer"
+          },
+          "month": {
+            "description": "YYYY-MM",
+            "examples": [
+              "2015-12"
+            ],
+            "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+            "title": "Month",
+            "type": "string"
+          },
+          "rows": {
+            "description": "Ordered by speed, then bucket",
+            "items": {
+              "$ref": "#/components/schemas/RatingBucket"
+            },
+            "title": "Rows",
+            "type": "array"
+          }
+        },
+        "required": [
+          "month",
+          "rows"
+        ],
+        "title": "RatingDistribution",
+        "type": "object"
+      },
+      "Speed": {
+        "description": "Lichess speed classes, as in lake.curated.games.",
+        "enum": [
+          "ultrabullet",
+          "bullet",
+          "blitz",
+          "rapid",
+          "classical",
+          "correspondence"
+        ],
+        "title": "Speed",
+        "type": "string"
+      },
+      "Summary": {
+        "properties": {
+          "from_month": {
+            "description": "YYYY-MM",
+            "examples": [
+              "2015-12"
+            ],
+            "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+            "title": "From Month",
+            "type": "string"
+          },
+          "rows": {
+            "description": "Ordered by month, then speed",
+            "items": {
+              "$ref": "#/components/schemas/SummaryRow"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "to_month": {
+            "description": "YYYY-MM",
+            "examples": [
+              "2015-12"
+            ],
+            "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+            "title": "To Month",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from_month",
+          "to_month",
+          "rows"
+        ],
+        "title": "Summary",
+        "type": "object"
+      },
+      "SummaryRow": {
+        "properties": {
+          "avg_rating": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Mean of both players' ratings",
+            "title": "Avg Rating"
+          },
+          "black_wins": {
+            "title": "Black Wins",
+            "type": "integer"
+          },
+          "bot_games": {
+            "description": "Games with a bot on either side",
+            "title": "Bot Games",
+            "type": "integer"
+          },
+          "draws": {
+            "title": "Draws",
+            "type": "integer"
+          },
+          "games": {
+            "title": "Games",
+            "type": "integer"
+          },
+          "month": {
+            "description": "YYYY-MM",
+            "examples": [
+              "2015-12"
+            ],
+            "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+            "title": "Month",
+            "type": "string"
+          },
+          "players": {
+            "description": "Distinct players",
+            "title": "Players",
+            "type": "integer"
+          },
+          "speed": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Speed class, `all`, or null for an unparseable time control",
+            "title": "Speed"
+          },
+          "unfinished": {
+            "description": "Games without a decided result",
+            "title": "Unfinished",
+            "type": "integer"
+          },
+          "white_wins": {
+            "title": "White Wins",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "white_wins",
+          "draws",
+          "black_wins",
+          "unfinished",
+          "month",
+          "speed",
+          "games",
+          "players",
+          "bot_games",
+          "avg_rating"
+        ],
+        "title": "SummaryRow",
+        "type": "object"
+      },
+      "SummarySpeed": {
+        "description": "Speeds in the monthly summary: every speed class, plus `all` (every game once).",
+        "enum": [
+          "all",
+          "ultrabullet",
+          "bullet",
+          "blitz",
+          "rapid",
+          "classical",
+          "correspondence"
+        ],
+        "title": "SummarySpeed",
+        "type": "string"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "Read-only aggregates of the Lichess game history (lake.gold). Data changes once a month; responses are cacheable (ETag, Cache-Control) and rate-limited per IP.",
+    "title": "Lichess lakehouse API",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/months": {
+      "get": {
+        "description": "Months that have data, oldest first.",
+        "operationId": "get_months",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Months"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "304": {
+            "description": "Not modified (If-None-Match matched the ETag)"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Invalid range"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many requests from this IP; see Retry-After"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The data store is unavailable; retry later"
+          }
+        },
+        "summary": "Get Months",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
+    "/api/v1/openings": {
+      "get": {
+        "description": "Most played openings over a month range, by speed and rating band.",
+        "operationId": "get_openings",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "required": true,
+            "schema": {
+              "examples": [
+                "2015-01"
+              ],
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+              "title": "From",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": true,
+            "schema": {
+              "examples": [
+                "2015-12"
+              ],
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+              "title": "To",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Omit for every speed",
+            "in": "query",
+            "name": "speed",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Speed"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Omit for every speed",
+              "title": "Speed"
+            }
+          },
+          {
+            "description": "Lower bound of a 200-point band; omit for all",
+            "in": "query",
+            "name": "rating_band",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 4000,
+                  "minimum": 0,
+                  "multipleOf": 200,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Lower bound of a 200-point band; omit for all",
+              "title": "Rating Band"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Openings"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "304": {
+            "description": "Not modified (If-None-Match matched the ETag)"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Invalid range"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many requests from this IP; see Retry-After"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The data store is unavailable; retry later"
+          }
+        },
+        "summary": "Get Openings",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
+    "/api/v1/rating-distribution": {
+      "get": {
+        "description": "Players' ratings in 50-point buckets for one month, per speed.",
+        "operationId": "get_rating_distribution",
+        "parameters": [
+          {
+            "description": "YYYY-MM",
+            "in": "query",
+            "name": "month",
+            "required": true,
+            "schema": {
+              "description": "YYYY-MM",
+              "examples": [
+                "2015-12"
+              ],
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+              "title": "Month",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Repeat for several; empty = every speed",
+            "in": "query",
+            "name": "speed",
+            "required": false,
+            "schema": {
+              "default": [],
+              "description": "Repeat for several; empty = every speed",
+              "items": {
+                "$ref": "#/components/schemas/Speed"
+              },
+              "title": "Speed",
+              "type": "array"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RatingDistribution"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "304": {
+            "description": "Not modified (If-None-Match matched the ETag)"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Invalid range"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many requests from this IP; see Retry-After"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The data store is unavailable; retry later"
+          }
+        },
+        "summary": "Get Rating Distribution",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
+    "/api/v1/summary": {
+      "get": {
+        "description": "Games, players and results per month and speed: the dashboard's time series.",
+        "operationId": "get_summary",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "required": true,
+            "schema": {
+              "examples": [
+                "2013-01"
+              ],
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+              "title": "From",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": true,
+            "schema": {
+              "examples": [
+                "2015-12"
+              ],
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+              "title": "To",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Repeat for several; empty = every speed and `all`",
+            "in": "query",
+            "name": "speed",
+            "required": false,
+            "schema": {
+              "default": [],
+              "description": "Repeat for several; empty = every speed and `all`",
+              "items": {
+                "$ref": "#/components/schemas/SummarySpeed"
+              },
+              "title": "Speed",
+              "type": "array"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Summary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "304": {
+            "description": "Not modified (If-None-Match matched the ETag)"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Invalid range"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many requests from this IP; see Retry-After"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The data store is unavailable; retry later"
+          }
+        },
+        "summary": "Get Summary",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
+    "/healthz": {
+      "get": {
+        "description": "Liveness: the process answers.",
+        "operationId": "healthz",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Healthz",
+        "tags": [
+          "probes"
+        ]
+      }
+    },
+    "/readyz": {
+      "get": {
+        "description": "Readiness: Trino answers a query as chess-api (checked at most every 30 s).",
+        "operationId": "readyz",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Readyz",
+        "tags": [
+          "probes"
+        ]
+      }
+    }
+  }
+}
