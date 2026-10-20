@@ -36,35 +36,46 @@ dashboard, an MCP server and a chat on `chess-*.generops.dev`. It's a portfolio 
 | `infra/compute` | ACR, AKS (system pool autoscaling 1–3, spot `batch` pool 0–4), Key Vault, identities (jobs, CI, ESO, Kyverno, Grafana, Lakekeeper, Trino), Managed Prometheus + alerts |
 | `infra/gitops` | Argo CD (+ Entra SSO via workload identity), cluster facts, namespaces/SAs, Cloudflare Tunnel + Access + DNS, Entra apps (needs `CLOUDFLARE_API_TOKEN`) |
 | `deploy/apps` | Argo CD apps (root app-of-apps); ApplicationSets where values come from facts |
-| `deploy/lichess` | WorkflowTemplates: ingest-month (land + publish), ingest-backfill, spark-job, jupyter, lakekeeper-bootstrap, trino-smoke |
+| `deploy/lichess` | WorkflowTemplates: ingest-month (land → raw → curated → gold), ingest-backfill, monthly, spark-job, jupyter, lakekeeper-bootstrap, trino-smoke; CronWorkflows lichess-monthly (daily), lake-maintenance (weekly) |
 | `deploy/examples` | `kubectl create -n lichess -f …` runs (not synced) |
 | `deploy/charts/platform` | ClusterSecretStore, Kyverno image signature policy |
 | `deploy/network-policies` | Cilium default-deny ingress per namespace + explicit allows |
 | `ingest/` | lichess-ingest (torrent/HTTPS download, parse to Parquet, claims, manifests) |
-| `spark/` | Spark 4.1 + Iceberg 1.12 image, `lichess_spark` (session, catalog `lake`, notebooks, raw WAP), jobs, notebook image |
+| `spark/` | Spark 4.1 + Iceberg 1.12 image, `lichess_spark` (session, catalog `lake`, `wap` write-audit-publish + lineage, `raw`, `curated`, `player_games`, `gold`, `maintenance`), jobs, notebook image |
+| `docs/adr` | decisions; 0001 bucketing (player_games: `bucket(16, player_id)`) |
 
-## Current state (2026-10-19)
+## Current state (2026-10-20)
 
 Live: GitOps (Argo CD, Workflows), signed CI images (GitHub OIDC, SBOM, Trivy, cosign,
 Kyverno digest verification, Renovate), Key Vault + ESO, Kyverno PSS (audit),
 Cilium network policies, Cloudflare Tunnel + Access (`chess-cd`, `chess-flows`,
-`chess-lab`, `chess-grafana`), Managed Prometheus + Grafana + email alerts, Lakekeeper
-(K8s-token auth, OpenFGA; `lichess-jobs` is instance admin), `lake.raw.games` with
-write-audit-publish (`lake.ops.dq_results`), backfill pipeline ready (not run yet),
-Trino (#64: JWT sign-in, private-CA TLS via trust-manager, read-only; `trino-smoke` passes).
+`chess-lab`, `chess-grafana`), Managed Prometheus + Grafana + email alerts (incl.
+WorkflowFailed), Lakekeeper (K8s-token auth, OpenFGA), Trino (#64: JWT sign-in, private-CA
+TLS via trust-manager, read-only rules; `trino-smoke` passes).
 
-In the lake: 2013-01 → 2015-12 and 2026-08/09 (38 months). 2016 was ingested on the PC
-but isn't in `lake.raw.games`; check whether it was ever published.
+The lake (catalog `lake`; every layer built a month at a time with write-audit-publish,
+checks in `lake.ops.dq_results`):
+- `raw.games` → `curated.games` (typed, nothing filtered, `is_duplicate`) →
+  `curated.player_games` (2 rows/game, `bucket(16, player_id)`) → `gold.monthly_summary`,
+  `gold.openings`, `gold.rating_distribution` (each game once).
+- Lineage by run id: each derived row has `_source_run_id` (the source month's `_run_id`);
+  `--pending` rebuilds a month only when its source was rebuilt, never after compaction.
+- 38 months: 2013-01 → 2015-12 and 2026-08/09. 2016 and the rest were never ingested; the
+  full backfill (#24) is deliberately deferred.
+- Daily `lichess-monthly` brings each new Lichess month (from 2026-08 on) through every
+  layer; weekly `lake-maintenance` compacts, expires snapshots, removes orphans.
+- Known data quirk: in 2013–2015 a few hundred to ~8.7k games per month start in the last
+  1–2 hours of the previous month (old dumps cut at European midnight, not UTC); counted
+  by the non-blocking `played_at_in_month` check, not dropped.
 
-Next, in order (issues in milestones Phase 4–7):
-1. Curated tables `curated.games`, `curated.player_games` (#25, #26) with WAP checks (#27).
-2. Gold tables + opening explorer (#65); Iceberg maintenance (#63).
-3. Data API (FastAPI, #66), public dashboard (React+TS+Vite, #67) on `chess.generops.dev`.
-4. MCP server (#68, Entra OAuth, app role `Lakehouse.Query`), model-agnostic chat (#69,
-   Pydantic AI, app role `Chat.User`, evals).
-5. Open loose ends: Kyverno audit → enforce (#62), cost export to the lake and traces
-   (#31), CNPG backups to the lake, Trino worker autoscaling (KEDA), monthly CronWorkflow (#30),
-   backfill (#24), teardown (#48).
+Next (issues in milestones Phase 4–7):
+1. Data API (FastAPI, #66; in progress), then the public dashboard (React+TS+Vite, #67)
+   on `chess.generops.dev`.
+2. Kyverno audit → enforce (#62), cost export to the lake (#31), ADRs for decisions already
+   made (#5, #10, #15, #7).
+3. Later, by choice: opening explorer `gold.position_moves` (#65), per-position data (#29),
+   MCP server (#68) and chat (#69), backfill (#24), teardown (#48). Also open: CNPG backups
+   to the lake, Trino worker autoscaling (KEDA).
 
 ## Conventions
 
