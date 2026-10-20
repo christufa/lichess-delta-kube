@@ -108,7 +108,59 @@ into the Iceberg table **`lake.raw.games`**, one month at a time:
 
 Readers never see an unchecked month; every check is stored in `lake.ops.dq_results`.
 `--pending` publishes every landed month that isn't in the table yet; re-publishing a month
-replaces it.
+replaces it. The branch-and-publish steps live in `lichess_spark/wap.py`, shared with curated.
+
+## curated.games
+
+`jobs/build_curated_games.py` builds **`lake.curated.games`** from `lake.raw.games`, a month
+at a time, with the same write-audit-publish. **Nothing is filtered**: every raw row becomes
+one typed row (`game_id`, `played_at` in UTC, ratings as integers, base/increment and speed
+class, normalized `result`, titles and `*_is_bot`, tournament/swiss id, lineage). What's
+unusual is kept and counted, not dropped:
+
+| Check | Blocks publishing? |
+|---|---|
+| curated rows = raw rows; `game_id` present; time control parseable; `played_at` present; month consistent; not empty | yes |
+| `game_id` unique (extra copies get `is_duplicate`); ratings in 400–4000; result decided (`*` → null); termination known; `played_at` in the month | no, counted in `dq_results` |
+
+Each row records the raw snapshot it came from (`_raw_snapshot_id`); `--pending` builds raw
+months that aren't in curated yet or were republished in raw since.
+
+## curated.player_games and gold
+
+`jobs/build_player_games.py` turns each curated game into **two rows**, one from each
+player's side (`player`, lower-cased `player_id`, `color`, opponent, ratings, `outcome`
+win/draw/loss, `score`). Like `games`, nothing is filtered. Layout follows
+[ADR 0001](../docs/adr/0001-bucketing.md): partitioned by `month` and
+`bucket(16, player_id)`, sorted by `player_id, played_at`. Blocking checks: exactly two rows
+per game, one white and one black, player present.
+
+`jobs/build_gold.py` builds the dashboard's small tables, counting each game once
+(`NOT is_duplicate`):
+
+| Table | Grain | Measures |
+|---|---|---|
+| `lake.gold.monthly_summary` | month × speed (`all` = every speed) | games, players, white wins/draws/black wins/unfinished, bot games, average rating |
+| `lake.gold.openings` | month × speed × ECO/opening × rating band (200) | games and results |
+| `lake.gold.rating_distribution` | month × speed × rating bucket (50) | player-games, players |
+
+Each gold table's totals must reconcile with curated (games = unique curated games,
+player-games = twice that) before it publishes.
+
+Each layer records the run id of the source month it was built from (`_source_run_id`), so
+`--pending` cascades: raw → `curated.games` → `curated.player_games` → gold. A rebuild of a
+source month changes its run id; compaction and other maintenance don't, so they never
+trigger rebuilds.
+
+## Table maintenance
+
+`jobs/maintain_tables.py` runs weekly (CronWorkflow `lake-maintenance`) on every table in
+`raw`, `curated`, `gold` and `ops`: `rewrite_data_files` (sort where the table has a sort
+order, binpack otherwise; only file groups with enough small files), `rewrite_manifests`,
+`expire_snapshots` (older than 7 days, keeping the last 3; snapshots a branch or tag points
+at are never expired) and `remove_orphan_files` (older than 3 days). Per-table overrides go
+in table properties `lichess.maintenance.{rewrite,min-input-files,expire-days,retain-last,orphan-days}`. `ingest-month` (and so
+`ingest-backfill`) runs all three builds after publishing raw.
 
 ## Adding a job
 

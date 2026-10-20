@@ -4,31 +4,18 @@
     manifest <root>/_state/raw_games/YYYY-MM.json         {"month": …, "games": N, …}
     table    lake.raw.games                               partitioned by month
 
-publish_month():
-  1. write the month into a private branch of the table (replacing that month there)
-  2. audit the branch: row count = manifest, Site present, Result valid, month column consistent
-  3. pass → fast-forward main to the branch; fail → main untouched
-  The branch is dropped either way; every check lands in lake.ops.dq_results.
+publish_month(): write-audit-publish (lichess_spark.wap) with these checks, all blocking:
+  row count = manifest, Site present, Result valid, month column consistent, not empty.
 """
 from __future__ import annotations
 
-import datetime as dt
 import uuid
-from dataclasses import dataclass
+
+from . import wap
+from .wap import DQ_TABLE, Check, branch_name  # noqa: F401  (re-exported for jobs and tests)
 
 TABLE = "lake.raw.games"
-TABLE_REF = "raw.games"  # inside the `lake` catalog, for procedures
-DQ_TABLE = "lake.ops.dq_results"
 RESULTS = ("1-0", "0-1", "1/2-1/2", "*")
-
-
-@dataclass
-class Check:
-    name: str
-    passed: bool
-    observed: int | None
-    expected: int | None
-    detail: str = ""
 
 
 def evaluate(month: str, stats: dict, expected_games: int | None) -> list[Check]:
@@ -45,10 +32,6 @@ def evaluate(month: str, stats: dict, expected_games: int | None) -> list[Check]
         Check("not_empty", rows > 0, rows, None),
     ]
     return checks
-
-
-def branch_name(month: str) -> str:
-    return "audit_" + month.replace("-", "_")
 
 
 # ---------------------------------------------------------------------------- Spark side
@@ -72,7 +55,6 @@ def table_exists(spark, name: str = TABLE) -> bool:
 
 def ensure_tables(spark, sample_df) -> None:
     spark.sql("CREATE NAMESPACE IF NOT EXISTS lake.raw")
-    spark.sql("CREATE NAMESPACE IF NOT EXISTS lake.ops")
     if not table_exists(spark):
         ddl = sample_df._jdf.schema().toDDL()
         spark.sql(f"""
@@ -86,16 +68,8 @@ def ensure_tables(spark, sample_df) -> None:
               'write.target-file-size-bytes' = '268435456',
               'comment' = 'Every Lichess standard game, one row per game: PGN header tags as strings, movetext, lineage. Partitioned by month (YYYY-MM).'
             )""")
-    if not has_main(spark):
-        # An empty first snapshot on main, so every month (the first too) can branch from it.
-        spark.createDataFrame([], sample_df.schema).writeTo(TABLE).append()
-    spark.sql(f"""
-        CREATE TABLE IF NOT EXISTS {DQ_TABLE} (
-          run_id STRING, checked_at TIMESTAMP, table_name STRING, partition STRING,
-          check_name STRING, passed BOOLEAN, observed BIGINT, expected BIGINT, detail STRING)
-        USING iceberg
-        TBLPROPERTIES ('format-version' = '2',
-                       'comment' = 'One row per data quality check per run (write-audit-publish gates).')""")
+    wap.ensure_main(spark, TABLE, sample_df.schema)
+    wap.ensure_dq_table(spark)
 
 
 def branch_stats(spark, branch: str, month: str) -> dict:
@@ -110,37 +84,15 @@ def branch_stats(spark, branch: str, month: str) -> dict:
     return row.asDict()
 
 
-def record(spark, run_id: str, month: str, checks: list[Check]) -> None:
-    now = dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
-    rows = [(run_id, now, TABLE, f"month={month}", c.name, c.passed, c.observed, c.expected, c.detail) for c in checks]
-    schema = ("run_id string, checked_at timestamp, table_name string, partition string, check_name string, "
-              "passed boolean, observed bigint, expected bigint, detail string")
-    spark.createDataFrame(rows, schema).writeTo(DQ_TABLE).append()
-
-
 def publish_month(spark, root: str, month: str, expected_games: int | None, run_id: str | None = None) -> list[Check]:
     """Write → audit → publish one month. Returns the checks; raises nothing on a failed audit."""
-    run_id = run_id or uuid.uuid4().hex
     staged = read_staging(spark, root, month)
     ensure_tables(spark, staged)
-    branch = branch_name(month)
-    spark.sql(f"ALTER TABLE {TABLE} DROP BRANCH IF EXISTS `{branch}`")  # leftovers from a crashed run
-    spark.sql(f"ALTER TABLE {TABLE} CREATE BRANCH `{branch}`")         # from main's current snapshot
-    staged.writeTo(f"{TABLE}.branch_{branch}").overwritePartitions()
-
-    checks = evaluate(month, branch_stats(spark, branch, month), expected_games)
-    if all(c.passed for c in checks):
-        spark.sql(f"CALL lake.system.fast_forward('{TABLE_REF}', 'main', '{branch}')")
-    spark.sql(f"ALTER TABLE {TABLE} DROP BRANCH IF EXISTS `{branch}`")
-    record(spark, run_id, month, checks)
-    return checks
-
-
-def has_main(spark) -> bool:
-    return spark.sql(f"SELECT 1 FROM {TABLE}.refs WHERE name = 'main'").count() > 0
+    audit = lambda branch: evaluate(month, branch_stats(spark, branch, month), expected_games)  # noqa: E731
+    return wap.publish(spark, TABLE, month, staged, audit, run_id or uuid.uuid4().hex)
 
 
 def published_months(spark) -> set[str]:
-    if not table_exists(spark) or not has_main(spark):
+    if not table_exists(spark) or not wap.has_main(spark, TABLE):
         return set()
     return {r[0] for r in spark.sql(f"SELECT DISTINCT partition.month FROM {TABLE}.partitions").collect()}

@@ -1,0 +1,24 @@
+# Not synced by Argo CD: run the weekly Iceberg maintenance now (deploy/lichess/cronworkflow-lake-maintenance.yaml).
+#   kubectl create -n lichess -f deploy/examples/run-maintain-tables.yaml
+# args: [] = every table; ["--orphans-dry-run"] lists orphan files without deleting them
+# (a good first run); ["--tables", "curated.player_games"] for one table.
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: maintain-tables-
+  namespace: lichess
+spec:
+  synchronization:
+    mutexes:
+      - name: raw-games-publish
+      - name: curated-and-gold-publish
+  workflowTemplateRef:
+    name: spark-job
+  arguments:
+    parameters:
+      - name: job
+        value: maintain_tables
+      - name: args
+        value: '["--orphans-dry-run"]'
+      - name: executors
+        value: "2"
