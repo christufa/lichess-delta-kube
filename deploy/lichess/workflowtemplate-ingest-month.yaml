@@ -143,6 +143,11 @@ spec:
         limit: "3"
         retryPolicy: OnError
         backoff: { duration: 1m, factor: "2", maxDuration: 30m }
+      # Pod Security "restricted" (#62): the image's ingest user by number, so the kubelet can
+      # verify it isn't root (the image says USER ingest; numeric from the next build on).
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
       container:
         image: "{{inputs.parameters.registry}}/lichess-ingest:{{inputs.parameters.image-tag}}"
         args:
