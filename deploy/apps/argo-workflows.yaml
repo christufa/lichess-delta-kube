@@ -41,6 +41,7 @@ spec:
         executor:
           securityContext:
             runAsNonRoot: true
+            runAsUser: 8737 # argoexec's image runs as root by default; 8737 is Argo's documented non-root uid
             allowPrivilegeEscalation: false
             capabilities: { drop: [ALL] }
             seccompProfile: { type: RuntimeDefault }

@@ -40,6 +40,12 @@ spec:
       # The step itself only creates the SparkApplication and watches it; keep it off the spot pool.
       nodeSelector:
         kubernetes.azure.com/agentpool: system
+      # A resource template's main container is argoexec too, which runs as root unless told
+      # otherwise; under Pod Security "restricted" it needs a non-root user (#62).
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 8737
+        seccompProfile: { type: RuntimeDefault }
       resource:
         action: create
         setOwnerReference: true # deleting the workflow deletes the SparkApplication and its pods
