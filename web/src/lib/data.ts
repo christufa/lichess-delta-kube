@@ -121,26 +121,30 @@ export function monthKpis(rows: readonly SummaryRow[], month: string): MonthKpis
   };
 }
 
-/** One speed's rated buckets in order, and its unrated players. */
+/**
+ * One speed's rated buckets in order, counted in player-games: each game counts once per
+ * player, at that player's rating in that game. These add up (to twice the games); distinct
+ * players per bucket don't, because a player whose rating moves appears in several buckets.
+ */
 export function ratingHistogram(
   rows: readonly RatingBucket[],
   speed: Speed,
-): { buckets: { rating: number; players: number }[]; unratedPlayers: number } {
+): { buckets: { rating: number; playerGames: number }[]; unratedPlayerGames: number } {
   const own = rows.filter((r) => r.speed === speed);
   const buckets = own
-    .flatMap((r) => (r.rating_bucket === null ? [] : [{ rating: r.rating_bucket, players: r.players }]))
+    .flatMap((r) => (r.rating_bucket === null ? [] : [{ rating: r.rating_bucket, playerGames: r.player_games }]))
     .sort((a, b) => a.rating - b.rating);
-  const unratedPlayers = own.filter((r) => r.rating_bucket === null).reduce((s, r) => s + r.players, 0);
-  return { buckets, unratedPlayers };
+  const unratedPlayerGames = own.filter((r) => r.rating_bucket === null).reduce((s, r) => s + r.player_games, 0);
+  return { buckets, unratedPlayerGames };
 }
 
-/** The bucket holding the median player (by player count), or null without data. */
-export function medianBucket(buckets: readonly { rating: number; players: number }[]): number | null {
-  const total = buckets.reduce((s, b) => s + b.players, 0);
+/** The bucket holding the median player-game, or null without data. */
+export function medianBucket(buckets: readonly { rating: number; playerGames: number }[]): number | null {
+  const total = buckets.reduce((s, b) => s + b.playerGames, 0);
   if (total === 0) return null;
   let seen = 0;
   for (const b of buckets) {
-    seen += b.players;
+    seen += b.playerGames;
     if (seen * 2 >= total) return b.rating;
   }
   return null;

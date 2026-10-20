@@ -81,23 +81,24 @@ describe("monthKpis", () => {
 
 describe("ratingHistogram", () => {
   const buckets: RatingBucket[] = [
-    { speed: "blitz", rating_bucket: 1550, players: 30, player_games: 0 },
-    { speed: "blitz", rating_bucket: 1500, players: 10, player_games: 0 },
-    { speed: "blitz", rating_bucket: null, players: 5, player_games: 0 },
-    { speed: "bullet", rating_bucket: 1500, players: 99, player_games: 0 },
+    // players overlap across buckets (ratings move during a month), so they're ignored here
+    { speed: "blitz", rating_bucket: 1550, players: 20, player_games: 30 },
+    { speed: "blitz", rating_bucket: 1500, players: 20, player_games: 10 },
+    { speed: "blitz", rating_bucket: null, players: 2, player_games: 5 },
+    { speed: "bullet", rating_bucket: 1500, players: 99, player_games: 99 },
   ];
 
-  it("keeps one speed's rated buckets in order and counts the unrated", () => {
+  it("keeps one speed's rated buckets in order, in player-games, and counts the unrated", () => {
     expect(ratingHistogram(buckets, "blitz")).toEqual({
       buckets: [
-        { rating: 1500, players: 10 },
-        { rating: 1550, players: 30 },
+        { rating: 1500, playerGames: 10 },
+        { rating: 1550, playerGames: 30 },
       ],
-      unratedPlayers: 5,
+      unratedPlayerGames: 5,
     });
   });
 
-  it("finds the median player's bucket", () => {
+  it("finds the median player-game's bucket", () => {
     expect(medianBucket(ratingHistogram(buckets, "blitz").buckets)).toBe(1550);
     expect(medianBucket([])).toBeNull();
   });
