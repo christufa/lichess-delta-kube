@@ -5,6 +5,7 @@ inside the image:
 
   spark-submit --master 'local[2]' /opt/lichess/tests/local_maintenance.py
 """
+import datetime as dt
 import glob
 import os
 import tempfile
@@ -57,7 +58,10 @@ def run():
 
     assert maintenance.tables(spark) == ["curated.t", "ops.log"], maintenance.tables(spark)
     defaults = maintenance.DEFAULTS.__class__("auto", 2, 0, 1, 3)  # expire everything but the last snapshot
-    r = maintenance.maintain(spark, "curated.t", defaults)
+    # Cutoffs are whole seconds: with "now" they'd miss snapshots committed in the same second
+    # (the compaction's own), so run as if a minute later.
+    later = lambda: dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=1)  # noqa: E731
+    r = maintenance.maintain(spark, "curated.t", defaults, now=later())
     print("curated.t:", r)
     assert r["settings"].rewrite == "sort"
     assert r["after"]["files"] < r["before"]["files"], r
@@ -66,10 +70,10 @@ def run():
     assert spark.table("lake.curated.t").count() == rows
     assert spark.sql("SELECT DISTINCT _run_id FROM lake.curated.t").collect()[0][0] == "run-1"  # lineage kept
 
-    r2 = maintenance.maintain(spark, "curated.t", defaults)
+    r2 = maintenance.maintain(spark, "curated.t", defaults, now=later())
     assert r2.get("rewritten_files", 0) == 0 and r2["after"]["files"] == r["after"]["files"], r2  # bounded
 
-    log = maintenance.maintain(spark, "ops.log", defaults)
+    log = maintenance.maintain(spark, "ops.log", defaults, now=later())
     assert log["settings"].rewrite == "binpack" and log["after"]["files"] < log["before"]["files"], log
     assert spark.table("lake.ops.log").count() == 80
 
