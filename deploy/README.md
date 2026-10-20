@@ -27,9 +27,11 @@ deploy/
     pki.yaml                    the private CA (deploy/pki), wave 2
     trino.yaml                  Trino over the lake (ApplicationSet: identity, OIDC issuer from facts), wave 3
     network-policies.yaml       default-deny ingress everywhere (deploy/network-policies), wave 2
+    chess-api.yaml              the data API (ApplicationSet → charts/chess-api, registry from facts), wave 3
   cloudflared/                cloudflared Deployment (routes and Access live in infra/gitops/edge.tf)
   lakekeeper/                 CloudNativePG clusters for the catalog and OpenFGA, generated encryption key
   charts/platform/            ClusterSecretStore, image signature policy (values from cluster facts)
+  charts/chess-api/           the data API (api/): Deployment, Service, service account (namespace chess-api)
   monitoring/                 PodMonitors (Argo Workflows, Argo CD, cloudflared)
   pki/                        private CA: ClusterIssuers, root CA, trust-manager Bundle
   network-policies/           one CiliumNetworkPolicy per namespace (+ scrape and cloudflared allows)
@@ -100,7 +102,8 @@ kubectl get workflows -n lichess
 ### Images
 
 Workflows run images from the cluster's ACR: `lichess-ingest`, `lichess-spark`,
-`lichess-notebook`, tag `<image-tag>` (default `main`). CI builds them on every merge to
+`lichess-notebook`, tag `<image-tag>` (default `main`). The data API runs `lichess-api`
+(see [api/README.md](../api/README.md)). CI builds them on every merge to
 main (`.github/workflows/images.yml`): tests inside the image, Trivy scan, push as
 `:<commit sha>` + `:main` with SBOM and provenance, cosign keyless signature. Pass a
 commit SHA as `image-tag` to pin a run to an exact build.

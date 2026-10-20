@@ -1,0 +1,83 @@
+# chess-api: FastAPI on :8000. Public routes are under /api (cloudflared, later); the probes
+# (/healthz, /readyz) are only reached by the kubelet.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chess-api
+  labels:
+    app.kubernetes.io/name: chess-api
+spec:
+  replicas: {{ .Values.replicas }}
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: chess-api
+  strategy:
+    rollingUpdate: { maxSurge: 1, maxUnavailable: 0 }
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: chess-api
+    spec:
+      serviceAccountName: chess-api
+      automountServiceAccountToken: false
+      nodeSelector:
+        kubernetes.azure.com/agentpool: system
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: chess-api
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: api
+          image: {{ printf "%s/%s:%s" (required "acrLoginServer is required" .Values.acrLoginServer) .Values.image.repository .Values.image.tag | quote }}
+          imagePullPolicy: Always # :main moves; Kyverno pins each pod to the signed digest
+          ports:
+            - { name: http, containerPort: 8000 }
+          env:
+            - { name: CHESS_API_TRINO_HOST, value: {{ .Values.trino.host | quote }} }
+            - { name: CHESS_API_TRINO_PORT, value: {{ .Values.trino.port | quote }} }
+            - { name: CHESS_API_TRINO_USER, value: {{ .Values.trino.user | quote }} }
+            - { name: CHESS_API_TRINO_TOKEN_FILE, value: /var/run/trino/token }
+            - { name: CHESS_API_TRINO_CA_FILE, value: /ca/ca.crt }
+            - { name: OTEL_SERVICE_NAME, value: chess-api }
+            {{- with .Values.env }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 10 # runs SELECT 1 on Trino at most every 30 s, cached between
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: trino-token, mountPath: /var/run/trino, readOnly: true }
+            - { name: internal-ca, mountPath: /ca, readOnly: true }
+      volumes:
+        - name: trino-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: trino
+                  expirationSeconds: 3600
+                  path: token
+        - name: internal-ca
+          configMap:
+            name: internal-ca # trust-manager copies the private CA into every namespace

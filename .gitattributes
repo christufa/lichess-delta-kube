@@ -1,3 +1,5 @@
 # Scripts that run inside Linux containers keep LF endings on Windows checkouts too.
 *.sh text eol=lf
 Dockerfile text eol=lf
+# The OpenAPI contract is compared byte for byte with what the code generates.
+api/openapi.json text eol=lf

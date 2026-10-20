@@ -1,0 +1,22 @@
+# Filled in by the `chess-api` ApplicationSet from the in-cluster Argo CD cluster secret.
+# Empty values fail rendering on purpose.
+acrLoginServer: ""
+
+image:
+  repository: lichess-api # lichess-*: Kyverno checks its cosign signature (charts/platform)
+  tag: main # or a commit SHA to pin an exact build
+
+replicas: 2
+
+trino:
+  host: trino.trino.svc.cluster.local
+  port: 8443
+  user: chess-api # = the service account name; Trino's rules let it read lake.gold only
+
+# Extra environment, e.g. OTEL_EXPORTER_OTLP_ENDPOINT once a collector exists, or
+# CHESS_API_RATE_LIMIT_PER_SECOND / CHESS_API_CACHE_TTL_SECONDS overrides.
+env: []
+
+resources:
+  requests: { cpu: 50m, memory: 128Mi }
+  limits: { memory: 384Mi }
