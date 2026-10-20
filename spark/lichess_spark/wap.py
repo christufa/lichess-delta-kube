@@ -54,10 +54,15 @@ def table_exists(spark, table: str) -> bool:
 
 
 def partition_snapshots(spark, table: str) -> dict[str, int]:
-    """month → the snapshot (on main) that last changed that month."""
+    """month → the snapshot (on main) that last changed that month.
+
+    A bucketed table has several partitions per month (one per bucket), which a compaction can
+    leave on different snapshots: take the most recently updated one."""
     if not table_exists(spark, table):
         return {}
-    rows = spark.sql(f"SELECT partition.month, last_updated_snapshot_id FROM {table}.partitions").collect()
+    rows = spark.sql(f"""
+        SELECT partition.month, max_by(last_updated_snapshot_id, last_updated_at)
+        FROM {table}.partitions GROUP BY partition.month""").collect()
     return {r[0]: r[1] for r in rows}
 
 
