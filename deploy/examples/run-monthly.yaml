@@ -1,0 +1,11 @@
+# Not synced by Argo CD: run the monthly pipeline now (what the lichess-monthly CronWorkflow runs daily).
+#   kubectl create -n lichess -f deploy/examples/run-monthly.yaml
+# Does nothing unless a month since `since` (default 2026-08) is published but not in the lake.
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: monthly-
+  namespace: lichess
+spec:
+  workflowTemplateRef:
+    name: monthly

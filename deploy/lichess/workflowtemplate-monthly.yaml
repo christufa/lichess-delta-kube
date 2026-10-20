@@ -1,0 +1,88 @@
+# The monthly pipeline (#30): bring every newly published Lichess month into the lake, end to end.
+#
+#   plan      lichess-ingest plan --json over `since`..: published months not in the lake yet
+#             (usually none; the new month appears in the first days of the next one)
+#   month     ingest-month for each: land → raw (write-audit-publish) → curated.games →
+#             curated.player_games → gold, each layer gated by its checks
+#   maintain  Iceberg maintenance on every table, only if a month came in
+#
+# Run daily by the CronWorkflow lichess-monthly, so a new month is picked up the day Lichess
+# publishes it, and a failed month is simply retried the next day (it stays pending).
+# Unlike ingest-backfill, a failed month fails the workflow, which fires the WorkflowFailed
+# alert (infra/compute/monitoring.tf). Months before `since` are the backfill's job (#24).
+#
+# Run it now: deploy/examples/run-monthly.yaml.
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: monthly
+  namespace: lichess
+spec:
+  entrypoint: monthly
+  parallelism: 4
+  activeDeadlineSeconds: 86400 # one day: the next day's run takes over
+  arguments:
+    parameters:
+      - name: since
+        value: "2026-08"
+        description: first month the monthly run looks at (YYYY-MM); earlier months are the backfill's
+      - name: image-tag
+        value: main
+      - name: workers
+        value: "6"
+      - name: download
+        value: auto
+      - name: publish
+        value: "true"
+
+  # ingest-month's container mounts this volume; templates referenced from another
+  # WorkflowTemplate use the calling workflow's volumes.
+  volumes:
+    - name: work
+      emptyDir:
+        sizeLimit: 120Gi
+
+  templates:
+    - name: monthly
+      steps:
+        - - name: plan
+            templateRef:
+              name: ingest-backfill
+              template: plan
+            arguments:
+              parameters:
+                - { name: months, value: "{{workflow.parameters.since}}:2999-12" }
+                - { name: image-tag, value: "{{workflow.parameters.image-tag}}" }
+        - - name: month
+            templateRef:
+              name: ingest-month
+              template: ingest-and-publish
+            arguments:
+              parameters:
+                - { name: months, value: "{{item}}" }
+                - { name: image-tag, value: "{{workflow.parameters.image-tag}}" }
+                - { name: workers, value: "{{workflow.parameters.workers}}" }
+                - { name: download, value: "{{workflow.parameters.download}}" }
+                - { name: publish, value: "{{workflow.parameters.publish}}" }
+            withParam: "{{steps.plan.outputs.result}}"
+        - - name: maintain
+            template: maintain
+            when: "'{{steps.plan.outputs.result}}' != '[]'"
+
+    # Same locks as the weekly lake-maintenance CronWorkflow.
+    - name: maintain
+      synchronization:
+        mutexes:
+          - name: raw-games-publish
+          - name: curated-and-gold-publish
+      steps:
+        - - name: maintain-tables
+            templateRef:
+              name: spark-job
+              template: spark
+            arguments:
+              parameters:
+                - { name: job, value: maintain_tables }
+                - { name: args, value: "[]" }
+                - { name: executors, value: "2" }
+                - { name: image-tag, value: main }
