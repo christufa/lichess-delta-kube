@@ -1,0 +1,21 @@
+# Daily check for a new Lichess month (#30): runs the `monthly` WorkflowTemplate, which does
+# nothing unless Lichess has published a month that isn't in the lake yet. Then it ingests it
+# and builds raw → curated → gold → maintenance, with no manual steps.
+#
+# Pause it (e.g. to save the spot-node cost of a new month): set `suspend: true` here.
+apiVersion: argoproj.io/v1alpha1
+kind: CronWorkflow
+metadata:
+  name: lichess-monthly
+  namespace: lichess
+spec:
+  schedules: ["0 6 * * *"] # daily 06:00 UTC
+  timezone: UTC
+  suspend: false
+  concurrencyPolicy: Forbid # a month still ingesting isn't started twice
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  workflowSpec:
+    workflowTemplateRef:
+      name: monthly
