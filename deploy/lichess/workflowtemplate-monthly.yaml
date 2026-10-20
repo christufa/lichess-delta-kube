@@ -5,6 +5,7 @@
 #   month     ingest-month for each: land → raw (write-audit-publish) → curated.games →
 #             curated.player_games → gold, each layer gated by its checks
 #   maintain  Iceberg maintenance on every table, only if a month came in
+#   cost      Azure costs of the previous and current month → lake.ops.azure_cost (#31), every run
 #
 # Run daily by the CronWorkflow lichess-monthly, so a new month is picked up the day Lichess
 # publishes it, and a failed month is simply retried the next day (it stays pending).
@@ -68,6 +69,16 @@ spec:
         - - name: maintain
             template: maintain
             when: "'{{steps.plan.outputs.result}}' != '[]'"
+        - - name: cost
+            templateRef:
+              name: spark-job
+              template: spark
+            arguments:
+              parameters:
+                - { name: job, value: build_azure_cost }
+                - { name: args, value: "[]" }
+                - { name: executors, value: "1" }
+                - { name: image-tag, value: main }
 
     # Same locks as the weekly lake-maintenance CronWorkflow.
     - name: maintain

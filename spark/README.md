@@ -159,7 +159,17 @@ trigger rebuilds.
 order, binpack otherwise; only file groups with enough small files), `rewrite_manifests`,
 `expire_snapshots` (older than 7 days, keeping the last 3; snapshots a branch or tag points
 at are never expired) and `remove_orphan_files` (older than 3 days). Per-table overrides go
-in table properties `lichess.maintenance.{rewrite,min-input-files,expire-days,retain-last,orphan-days}`. `ingest-month` (and so
+in table properties `lichess.maintenance.{rewrite,min-input-files,expire-days,retain-last,orphan-days}`.
+
+## Azure costs
+
+`jobs/build_azure_cost.py` loads the daily Azure costs of the project's resource groups (the
+ones the budget counts) into **`lake.ops.azure_cost`**: usage date, resource group, service,
+resource type, cost, currency. It calls the Cost Management query API as the jobs identity,
+which has Cost Management Reader on those resource groups only, so there's no export and no
+storage keys. Costs settle for about 72 hours, so the daily `monthly` run rebuilds the
+previous and the current month. It's in `ops`, not `gold`: gold is readable by the public API
+and the MCP server. `ingest-month` (and so
 `ingest-backfill`) runs all three builds after publishing raw.
 
 ## Adding a job
