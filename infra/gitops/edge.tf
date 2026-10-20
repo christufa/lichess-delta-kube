@@ -5,6 +5,10 @@
 # Private hostnames: Cloudflare Access asks for a Microsoft (Entra ID) sign-in and lets in
 # only var.access_allowed_emails; cloudflared re-checks the Access token (aud) for every
 # request, so traffic can't reach the origin without passing Access.
+#
+# Public routes (no Access): <prefix>.<domain> with a path each. Only /api/ for now: the
+# read-only data API (#66), which rate-limits per client IP (CF-Connecting-IP) and can only
+# read lake.gold. Every other path on that host is a 404 until the dashboard (#67) serves /.
 # https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/
 locals {
   private_hosts = {
@@ -34,6 +38,13 @@ locals {
       title         = "JupyterLab"
       service       = "http://localhost:8888"
       no_tls_verify = false
+    }
+  }
+  public_hostname = var.hostname_prefix == "" ? var.domain : "${var.hostname_prefix}.${var.domain}"
+  public_routes = {
+    api = {
+      path    = "^/api/"
+      service = "http://chess-api.chess-api.svc.cluster.local:80"
     }
   }
   tunnel_hosts = {
@@ -121,6 +132,11 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "aks" {
           }
         }
       }],
+      [for k, r in local.public_routes : {
+        hostname = local.public_hostname
+        path     = r.path
+        service  = r.service
+      }],
       [{ service = "http_status:404" }], # anything else
     )
   }
@@ -157,6 +173,16 @@ resource "cloudflare_dns_record" "private" {
   proxied = true
   ttl     = 1 # automatic (proxied)
   comment = "lichess-delta-kube: Cloudflare Tunnel (infra/gitops/edge.tf)"
+}
+
+resource "cloudflare_dns_record" "public" {
+  zone_id = var.cloudflare_zone_id
+  name    = local.public_hostname
+  type    = "CNAME"
+  content = "${local.tunnel_ids.aks}.cfargotunnel.com"
+  proxied = true
+  ttl     = 1 # automatic (proxied)
+  comment = "lichess-delta-kube: public routes via Cloudflare Tunnel (infra/gitops/edge.tf)"
 }
 
 # The tunnel token for cloudflared, straight into the cluster (never in a file or git).
