@@ -8,6 +8,16 @@ metadata:
     app.kubernetes.io/part-of: lichess
 spec:
   serviceAccountName: lichess-jobs
+  # Pod Security "restricted" (#62): the image's spark user, nothing extra.
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 185
+    seccompProfile: { type: RuntimeDefault }
+  containers:
+    - name: spark-kubernetes-executor
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities: { drop: [ALL] }
   nodeSelector:
     workload: batch
   tolerations:

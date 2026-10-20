@@ -54,8 +54,14 @@ spec:
         kubernetes.azure.com/agentpool: system
       securityContext:
         fsGroup: 185 # the image's spark user: lets it write to the PVC
+        runAsNonRoot: true
+        runAsUser: 185
+        seccompProfile: { type: RuntimeDefault }
       container:
         image: "{{inputs.parameters.registry}}/lichess-notebook:{{inputs.parameters.image-tag}}"
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities: { drop: [ALL] }
         imagePullPolicy: Always
         command: [bash, /opt/lichess/bin/start-jupyter.sh]
         env:
