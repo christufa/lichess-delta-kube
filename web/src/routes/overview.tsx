@@ -44,7 +44,7 @@ export function OverviewPage() {
       <div className="space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight">Lichess, month by month</h1>
         <p className="text-muted-foreground text-sm">
-          Every rated and casual game in the Lichess open database: how many were played, by whom, at what
+          Every rated standard game in the Lichess open database: how many were played, by whom, at what
           speed, and how they ended.
         </p>
       </div>
@@ -334,7 +334,7 @@ function RatingCard({
   });
   const hist = useMemo(() => (dist.data ? ratingHistogram(dist.data.rows, speed) : undefined), [dist.data, speed]);
   const median = hist ? medianBucket(hist.buckets) : null;
-  const total = hist ? hist.buckets.reduce((s, b) => s + b.players, 0) : 0;
+  const total = hist ? hist.buckets.reduce((s, b) => s + b.playerGames, 0) : 0;
 
   const option = useMemo<ChartOption>(() => {
     const base = baseOption(colors);
@@ -349,17 +349,17 @@ function RatingCard({
           const p = params[0];
           if (!p) return "";
           const lo = Number(p.name);
-          return `${lo}–${lo + 49}<br/><b>${formatInt(p.value)}</b> players`;
+          return `${lo}–${lo + 49}<br/><b>${formatInt(p.value)}</b> player-games`;
         },
       },
       xAxis: { ...base.xAxis, type: "category", data: hist?.buckets.map((b) => String(b.rating)) ?? [] },
       yAxis: { ...base.yAxis, type: "value", axisLabel: { ...base.yAxis.axisLabel, formatter: (v: number) => formatCompact(v) } },
       series: [
         {
-          name: "Players",
+          name: "Player-games",
           type: "bar",
           barCategoryGap: "10%",
-          data: hist?.buckets.map((b) => b.players) ?? [],
+          data: hist?.buckets.map((b) => b.playerGames) ?? [],
           color,
           itemStyle: { borderRadius: [3, 3, 0, 0] },
         },
@@ -372,8 +372,8 @@ function RatingCard({
       title="Rating distribution"
       description={
         hist && total > 0
-          ? `${formatInt(total)} rated ${SPEED_LABELS[speed].toLowerCase()} players in ${formatMonth(month)}, by their rating in 50-point steps; the median player is at ${median}–${(median ?? 0) + 49}.${hist.unratedPlayers > 0 ? ` ${formatInt(hist.unratedPlayers)} more had no rating.` : ""}`
-          : `Players by rating in 50-point steps.`
+          ? `Players' ratings in ${formatInt(Math.round(total / 2))} rated ${SPEED_LABELS[speed].toLowerCase()} games in ${formatMonth(month)}, in 50-point steps: each game counts once for each player, at their rating then. The median is ${median}–${(median ?? 0) + 49}.${hist.unratedPlayerGames > 0 ? ` ${formatInt(hist.unratedPlayerGames)} more had no rating.` : ""}`
+          : `Players' ratings per game in 50-point steps.`
       }
       action={
         <FilterBar label="Rating distribution filters">
@@ -398,9 +398,9 @@ function RatingCard({
       table={
         hist && (
           <DataTable
-            caption="Players by rating"
-            columns={["Rating", "Players"]}
-            rows={hist.buckets.map((b) => [`${b.rating}–${b.rating + 49}`, formatInt(b.players)])}
+            caption="Player-games by rating"
+            columns={["Rating", "Player-games"]}
+            rows={hist.buckets.map((b) => [`${b.rating}–${b.rating + 49}`, formatInt(b.playerGames)])}
           />
         )
       }
