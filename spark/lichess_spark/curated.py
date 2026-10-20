@@ -13,8 +13,8 @@ build_month(): write-audit-publish (lichess_spark.wap).
              played_at present, month column consistent, not empty
   counted    game_id unique, rating in range, result decided, termination known,
              played_at in month
-Each row records the raw partition snapshot it came from (_raw_snapshot_id), so a month is
-rebuilt (--pending) whenever raw republishes it.
+Each row records the raw run it was built from (_source_run_id), so a month is rebuilt
+(--pending) whenever raw republishes it from a new ingest; compaction doesn't trigger that.
 """
 from __future__ import annotations
 
@@ -84,7 +84,7 @@ def evaluate(month: str, stats: dict, raw_rows: int) -> list[Check]:
 
 # ---------------------------------------------------------------------------- Spark side
 
-def transform(raw_df, raw_snapshot_id: int | None, run_id: str):
+def transform(raw_df, source_run_id: str | None, run_id: str):
     """Raw rows of one month → curated rows, one for one (no filters)."""
     from pyspark.sql import Window
     from pyspark.sql import functions as F
@@ -141,13 +141,14 @@ def transform(raw_df, raw_snapshot_id: int | None, run_id: str):
     is_dup = F.col("game_id").isNotNull() & (F.row_number().over(first) > 1)
     return (df.withColumn("is_duplicate", is_dup)
               .drop("_ingested_at")
-              .withColumn("_raw_snapshot_id", F.lit(raw_snapshot_id).cast("long"))
+              .withColumn(wap.SOURCE_RUN_ID, F.lit(source_run_id).cast("string"))
               .withColumn("_run_id", F.lit(run_id))
               .withColumn("_built_at", F.current_timestamp()))
 
 
 def ensure_tables(spark, sample_df) -> None:
     spark.sql("CREATE NAMESPACE IF NOT EXISTS lake.curated")
+    wap.migrate_lineage(spark, TABLE)
     if not wap.table_exists(spark, TABLE):
         ddl = sample_df._jdf.schema().toDDL()
         spark.sql(f"""
@@ -187,7 +188,7 @@ def branch_stats(spark, branch: str, month: str) -> dict:
 
 def pending_months(spark) -> list[str]:
     """Raw months not in curated yet, or republished in raw since curated was built."""
-    return wap.pending(spark, raw.TABLE, TABLE, "_raw_snapshot_id")
+    return wap.pending(spark, raw.TABLE, TABLE)
 
 
 def build_month(spark, month: str, run_id: str | None = None) -> list[Check]:

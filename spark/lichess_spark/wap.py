@@ -53,41 +53,57 @@ def table_exists(spark, table: str) -> bool:
     return spark.catalog.tableExists(table)
 
 
-def partition_snapshots(spark, table: str) -> dict[str, int]:
-    """month → the snapshot (on main) that last changed that month.
-
-    A bucketed table has several partitions per month (one per bucket), which a compaction can
-    leave on different snapshots: take the most recently updated one."""
-    if not table_exists(spark, table):
-        return {}
-    rows = spark.sql(f"""
-        SELECT partition.month, max_by(last_updated_snapshot_id, last_updated_at)
-        FROM {table}.partitions GROUP BY partition.month""").collect()
-    return {r[0]: r[1] for r in rows}
+# Lineage: every row carries the run that wrote it (_run_id: the ingest run for raw, the build
+# run for curated and gold). A derived table records, per month, the source's run id it was
+# built from (_source_run_id). A rebuild of the source month changes its run id; compaction and
+# other maintenance rewrite files but keep the rows, so they don't make anything look stale.
+SOURCE_RUN_ID = "_source_run_id"
+LEGACY_LINEAGE = ("_raw_snapshot_id", "_games_snapshot_id", "_player_games_snapshot_id")
 
 
-def built_from(spark, table: str, column: str) -> dict[str, int]:
-    """month → the source snapshot each published month of `table` was built from (`column`)."""
+def source_versions(spark, table: str) -> dict[str, str]:
+    """month → the run id of that month's rows on main (one run writes a whole month)."""
     if not table_exists(spark, table) or not has_main(spark, table):
         return {}
-    rows = spark.sql(f"SELECT month, max({column}) FROM {table} GROUP BY month").collect()
+    rows = spark.sql(f"SELECT month, max(_run_id) FROM {table} GROUP BY month").collect()
     return {r[0]: r[1] for r in rows}
 
 
-def pending(spark, source: str, target: str, column: str) -> list[str]:
-    """Source months not in target yet, or changed in source since target was built from them."""
-    have, built = partition_snapshots(spark, source), built_from(spark, target, column)
-    return sorted(m for m, snap in have.items() if built.get(m) != snap)
+def built_from(spark, table: str) -> dict[str, str]:
+    """month → the source run id each published month of `table` was built from."""
+    if not table_exists(spark, table) or not has_main(spark, table):
+        return {}
+    if SOURCE_RUN_ID not in spark.table(table).columns:  # built before run-id lineage: rebuild
+        return {}
+    rows = spark.sql(f"SELECT month, max({SOURCE_RUN_ID}) FROM {table} GROUP BY month").collect()
+    return {r[0]: r[1] for r in rows}
+
+
+def pending(spark, source: str, target: str) -> list[str]:
+    """Source months not in target yet, or rebuilt in source since target was built from them."""
+    have, built = source_versions(spark, source), built_from(spark, target)
+    return sorted(m for m, run in have.items() if run is not None and built.get(m) != run)
 
 
 def pinned_month(spark, source: str, month: str):
-    """(lineage snapshot, rows of `month` read at main's current snapshot).
+    """(source run id, rows of `month`), both from main's current snapshot, so they agree."""
+    from pyspark.sql import functions as F
 
-    Lineage first, then pin the data: if the source republishes the month in between, the data
-    is newer than the recorded snapshot and the next --pending run just builds it again."""
-    lineage = partition_snapshots(spark, source).get(month)
     snapshot = spark.sql(f"SELECT snapshot_id FROM {source}.refs WHERE name = 'main'").first()[0]
-    return lineage, spark.sql(f"SELECT * FROM {source} VERSION AS OF {snapshot} WHERE month = '{month}'")
+    rows = spark.sql(f"SELECT * FROM {source} VERSION AS OF {snapshot} WHERE month = '{month}'")
+    return rows.agg(F.max("_run_id")).first()[0], rows
+
+
+def migrate_lineage(spark, table: str) -> None:
+    """Tables from before run-id lineage: add _source_run_id, drop the snapshot-id columns."""
+    if not table_exists(spark, table):
+        return
+    columns = spark.table(table).columns
+    if SOURCE_RUN_ID not in columns:
+        spark.sql(f"ALTER TABLE {table} ADD COLUMN {SOURCE_RUN_ID} STRING")
+    for legacy in LEGACY_LINEAGE:
+        if legacy in columns:
+            spark.sql(f"ALTER TABLE {table} DROP COLUMN {legacy}")
 
 
 def ensure_main(spark, table: str, schema) -> None:

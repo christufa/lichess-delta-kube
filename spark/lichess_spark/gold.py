@@ -12,8 +12,8 @@ is: unfinished games count as games (`unfinished`), unknown ratings form a null 
 build_month(): each table gets write-audit-publish (lichess_spark.wap) with blocking checks
 that its totals reconcile with curated (#27): games add up to the month's unique games
 (player-games to twice that), and the table isn't empty. The month's source is pinned to one
-player_games snapshot (recorded as _player_games_snapshot_id), so --pending rebuilds a month
-whenever player_games changes.
+player_games build (its run id, recorded as _source_run_id), so --pending rebuilds a month
+whenever player_games rebuilds it.
 """
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ SUMMARY = "lake.gold.monthly_summary"
 OPENINGS = "lake.gold.openings"
 RATINGS = "lake.gold.rating_distribution"
 TABLES = (SUMMARY, OPENINGS, RATINGS)
-LINEAGE = "_player_games_snapshot_id"
+LINEAGE = wap.SOURCE_RUN_ID
 ALL_SPEEDS = "all"
 RATING_BAND = 200
 RATING_BUCKET = 50
@@ -114,6 +114,7 @@ def rating_distribution(players):
 
 def ensure_table(spark, table: str, sample_df) -> None:
     spark.sql("CREATE NAMESPACE IF NOT EXISTS lake.gold")
+    wap.migrate_lineage(spark, table)
     if not wap.table_exists(spark, table):
         ddl = sample_df._jdf.schema().toDDL()
         comment = COMMENTS[table].replace("'", "\\'")  # a quote would end the SQL string
@@ -142,7 +143,7 @@ def branch_stats(spark, table: str, branch: str, month: str) -> dict:
 
 def pending_months(spark) -> list[str]:
     """player_games months that any gold table hasn't been built from yet."""
-    return sorted(set().union(*(wap.pending(spark, player_games.TABLE, t, LINEAGE) for t in TABLES)))
+    return sorted(set().union(*(wap.pending(spark, player_games.TABLE, t) for t in TABLES)))
 
 
 def build_month(spark, month: str, run_id: str | None = None) -> list[Check]:
@@ -158,7 +159,7 @@ def build_month(spark, month: str, run_id: str | None = None) -> list[Check]:
     built = {SUMMARY: summary(games, players), OPENINGS: openings(games), RATINGS: rating_distribution(players)}
     checks = []
     for table, df in built.items():
-        df = (df.withColumn(LINEAGE, F.lit(lineage).cast("long"))
+        df = (df.withColumn(LINEAGE, F.lit(lineage).cast("string"))
                 .withColumn("_run_id", F.lit(run_id))
                 .withColumn("_built_at", F.current_timestamp()))
         ensure_table(spark, table, df)

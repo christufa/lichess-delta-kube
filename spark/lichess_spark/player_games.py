@@ -49,7 +49,7 @@ def evaluate(month: str, stats: dict, games: int) -> list[Check]:
 
 # ---------------------------------------------------------------------------- Spark side
 
-def transform(games_df, games_snapshot_id: int | None, run_id: str):
+def transform(games_df, source_run_id: str | None, run_id: str):
     """Curated games of one month → two rows per game (no filters)."""
     from pyspark.sql import functions as F
 
@@ -88,13 +88,14 @@ def transform(games_df, games_snapshot_id: int | None, run_id: str):
 
     both = side("white", "black", 0).unionByName(side("black", "white", 1))
     return (both.withColumn("score", score(F.col("outcome")))
-                .withColumn("_games_snapshot_id", F.lit(games_snapshot_id).cast("long"))
+                .withColumn(wap.SOURCE_RUN_ID, F.lit(source_run_id).cast("string"))
                 .withColumn("_run_id", F.lit(run_id))
                 .withColumn("_built_at", F.current_timestamp()))
 
 
 def ensure_tables(spark, sample_df) -> None:
     spark.sql("CREATE NAMESPACE IF NOT EXISTS lake.curated")
+    wap.migrate_lineage(spark, TABLE)
     if not wap.table_exists(spark, TABLE):
         ddl = sample_df._jdf.schema().toDDL()
         spark.sql(f"""
@@ -137,7 +138,7 @@ def branch_stats(spark, branch: str, month: str) -> dict:
 
 def pending_months(spark) -> list[str]:
     """Curated game months not in player_games yet, or rebuilt in curated.games since."""
-    return wap.pending(spark, curated.TABLE, TABLE, "_games_snapshot_id")
+    return wap.pending(spark, curated.TABLE, TABLE)
 
 
 def build_month(spark, month: str, run_id: str | None = None) -> list[Check]:

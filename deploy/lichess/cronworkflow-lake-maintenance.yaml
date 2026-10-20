@@ -1,0 +1,38 @@
+# Weekly Iceberg maintenance on every lake table (#63): compact small files, rewrite manifests,
+# expire snapshots older than 7 days (branches and tags are kept), remove orphan files older
+# than 3 days. spark/jobs/maintain_tables.py; per-table settings in table properties
+# (lichess.maintenance.*, see spark/lichess_spark/maintenance.py).
+#
+# Holds both build locks, so it never rewrites a table while a build publishes into it.
+# Run it now: deploy/examples/run-maintain-tables.yaml.
+apiVersion: argoproj.io/v1alpha1
+kind: CronWorkflow
+metadata:
+  name: lake-maintenance
+  namespace: lichess
+spec:
+  schedules: ["0 3 * * 0"] # Sundays 03:00 UTC
+  timezone: UTC
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  workflowSpec:
+    entrypoint: maintain
+    synchronization:
+      mutexes:
+        - name: raw-games-publish
+        - name: curated-and-gold-publish
+    templates:
+      - name: maintain
+        steps:
+          - - name: maintain-tables
+              templateRef:
+                name: spark-job
+                template: spark
+              arguments:
+                parameters:
+                  - { name: job, value: maintain_tables }
+                  - { name: args, value: "[]" }
+                  - { name: executors, value: "2" }
+                  - { name: image-tag, value: main }
