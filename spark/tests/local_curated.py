@@ -22,7 +22,7 @@ import traceback
 COLUMNS = ("Site string, Event string, White string, Black string, Result string, UTCDate string, UTCTime string, "
            "WhiteElo string, BlackElo string, WhiteRatingDiff string, BlackRatingDiff string, WhiteTitle string, "
            "BlackTitle string, ECO string, Opening string, TimeControl string, Termination string, "
-           "month string, _source_file string, _ingested_at timestamp")
+           "month string, _source_file string, _ingested_at timestamp, _run_id string")
 TIME_CONTROLS = ["60+0", "180+2", "300+5", "900+10", "1800+30", "15+0", "-"]
 
 
@@ -42,7 +42,7 @@ def game(month, i, **over):
         "WhiteRatingDiff": "+12", "BlackRatingDiff": "-12", "WhiteTitle": None, "BlackTitle": None,
         "ECO": "C20", "Opening": "King's Pawn Game", "TimeControl": TIME_CONTROLS[i % len(TIME_CONTROLS)],
         "Termination": "Normal", "month": month, "_source_file": f"{month}.pgn.zst",
-        "_ingested_at": dt.datetime(2026, 10, 1),
+        "_ingested_at": dt.datetime(2026, 10, 1), "_run_id": f"ingest-{month}-1",
     }
     return {**row, **over}
 
@@ -56,8 +56,8 @@ def run():
     })
     names = [c.split()[0] for c in COLUMNS.split(", ")]
 
-    def land_and_publish(month, games):
-        rows = [tuple(g[n] for n in names) for g in games]
+    def land_and_publish(month, games, run=1):
+        rows = [tuple({**g, "_run_id": f"ingest-{month}-{run}"}[n] for n in names) for g in games]
         (spark.createDataFrame(rows, COLUMNS).coalesce(1)
          .write.mode("overwrite").parquet(f"{root}/raw/games/month={month}"))
         os.makedirs(f"{root[7:]}/_state/raw_games", exist_ok=True)
@@ -109,9 +109,12 @@ def run():
     for r in games.select("time_control", "base_seconds", "increment_seconds", "speed").distinct().collect():
         assert curated.parse_time_control(r[0]) == (r[1], r[2], r[3]), r
 
-    # Lineage: nothing pending but the rejected month; republishing raw makes the month pending again.
+    # Lineage is by run id: republishing the same ingest run changes nothing; a new ingest run
+    # makes the month pending again.
     assert curated.pending_months(spark) == ["2013-02"], curated.pending_months(spark)
     land_and_publish("2013-01", jan)
+    assert curated.pending_months(spark) == ["2013-02"], curated.pending_months(spark)
+    land_and_publish("2013-01", jan, run=2)
     assert curated.pending_months(spark) == ["2013-01", "2013-02"], curated.pending_months(spark)
     assert wap.gate(curated.build_month(spark, "2013-01"))
     assert spark.table(curated.TABLE).count() == len(jan)                 # rebuilt, not appended
@@ -142,12 +145,12 @@ def run():
     assert spark.table(gold.RATINGS).agg({"player_games": "sum"}).first()[0] == 2 * unique
     assert spark.table(gold.RATINGS).where("rating_bucket IS NULL").agg({"player_games": "sum"}).first()[0] == 1  # the '?' rating
     assert gold.pending_months(spark) == []
-    # Compacting one bucket's files moves only that partition to a new snapshot; the month's
-    # lineage must follow it (the latest bucket), so gold sees the month as changed.
-    spark.sql(f"CALL lake.system.rewrite_data_files(table => '{wap.ref(player_games.TABLE)}', "
-              "options => map('rewrite-all', 'true'), where => 'player_id = \"w7\"')")
-    assert gold.pending_months(spark) == ["2013-01"], gold.pending_months(spark)
-    assert wap.gate(gold.build_month(spark, "2013-01")) and gold.pending_months(spark) == []
+    # Compaction rewrites files but keeps the rows (and their run ids): nothing downstream is stale.
+    for table in (curated.TABLE, player_games.TABLE):
+        spark.sql(f"CALL lake.system.rewrite_data_files(table => '{wap.ref(table)}', options => map('rewrite-all', 'true'))")
+    assert player_games.pending_months(spark) == [] and gold.pending_months(spark) == [], (
+        player_games.pending_months(spark), gold.pending_months(spark))
+    assert spark.table(player_games.TABLE).count() == 2 * len(jan)
 
     dq = spark.table(wap.DQ_TABLE).where(f"table_name = '{curated.TABLE}'")
     assert dq.where("NOT passed AND blocking").count() == 1                # Feb's time control

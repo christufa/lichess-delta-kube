@@ -147,8 +147,19 @@ per game, one white and one black, player present.
 Each gold table's totals must reconcile with curated (games = unique curated games,
 player-games = twice that) before it publishes.
 
-Each layer records the source snapshot it was built from, so `--pending` cascades:
-raw → `curated.games` → `curated.player_games` → gold. `ingest-month` (and so
+Each layer records the run id of the source month it was built from (`_source_run_id`), so
+`--pending` cascades: raw → `curated.games` → `curated.player_games` → gold. A rebuild of a
+source month changes its run id; compaction and other maintenance don't, so they never
+trigger rebuilds.
+
+## Table maintenance
+
+`jobs/maintain_tables.py` runs weekly (CronWorkflow `lake-maintenance`) on every table in
+`raw`, `curated`, `gold` and `ops`: `rewrite_data_files` (sort where the table has a sort
+order, binpack otherwise; only file groups with enough small files), `rewrite_manifests`,
+`expire_snapshots` (older than 7 days, keeping the last 3; snapshots a branch or tag points
+at are never expired) and `remove_orphan_files` (older than 3 days). Per-table overrides go
+in table properties `lichess.maintenance.{rewrite,min-input-files,expire-days,retain-last,orphan-days}`. `ingest-month` (and so
 `ingest-backfill`) runs all three builds after publishing raw.
 
 ## Adding a job
