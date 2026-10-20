@@ -22,12 +22,14 @@ RUN pip install .
 FROM base AS test
 RUN pip install ".[dev]"
 COPY tests ./tests
-USER ingest
+USER 10001
 RUN pytest -q -p no:cacheprovider
 
 # ---- runtime ----
+# Numeric USER (the uid of "ingest" above): with runAsNonRoot the kubelet must be able to
+# verify the user isn't root, which it can't for a name.
 FROM base AS runtime
-USER ingest
+USER 10001
 VOLUME ["/work"]
 WORKDIR /work
 ENTRYPOINT ["lichess-ingest"]
