@@ -142,6 +142,12 @@ def run():
     assert spark.table(gold.RATINGS).agg({"player_games": "sum"}).first()[0] == 2 * unique
     assert spark.table(gold.RATINGS).where("rating_bucket IS NULL").agg({"player_games": "sum"}).first()[0] == 1  # the '?' rating
     assert gold.pending_months(spark) == []
+    # Compacting one bucket's files moves only that partition to a new snapshot; the month's
+    # lineage must follow it (the latest bucket), so gold sees the month as changed.
+    spark.sql(f"CALL lake.system.rewrite_data_files(table => '{wap.ref(player_games.TABLE)}', "
+              "options => map('rewrite-all', 'true'), where => 'player_id = \"w7\"')")
+    assert gold.pending_months(spark) == ["2013-01"], gold.pending_months(spark)
+    assert wap.gate(gold.build_month(spark, "2013-01")) and gold.pending_months(spark) == []
 
     dq = spark.table(wap.DQ_TABLE).where(f"table_name = '{curated.TABLE}'")
     assert dq.where("NOT passed AND blocking").count() == 1                # Feb's time control
