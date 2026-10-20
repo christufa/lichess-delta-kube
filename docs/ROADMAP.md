@@ -50,6 +50,7 @@ docs/        roadmap and architecture decision records (docs/adr/)
 spike/       throwaway measurement tools (spike/pgn_timing)
 ingest/      lichess-ingest: download, verify, parse and land raw Parquet in ADLS
 spark/       PySpark jobs and the Spark image (Spark 4.1, Iceberg 1.12, ABFS + workload identity)
+api/         chess-api: the read-only data API over lake.gold (FastAPI; openapi.json is the contract)
 infra/       Terraform: bootstrap (state, budget), platform (lake, network), compute (ACR, AKS, Key Vault, identities), gitops (Argo CD, cluster facts)
 deploy/      Argo CD (GitOps): apps, charts/platform, workflow templates, examples
 ```

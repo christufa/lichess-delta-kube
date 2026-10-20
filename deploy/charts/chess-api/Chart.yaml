@@ -1,0 +1,8 @@
+apiVersion: v2
+name: chess-api
+description: >-
+  The data API (api/) over lake.gold for the public dashboard, in namespace chess-api.
+  The registry comes from the Argo CD cluster secret written by infra/gitops, through the
+  `chess-api` ApplicationSet; nothing deployment-specific is in git.
+type: application
+version: 0.1.0

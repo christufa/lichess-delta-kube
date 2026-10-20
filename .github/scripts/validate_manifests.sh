@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Render and validate everything Argo CD syncs from this repo:
 #   - deploy/charts/*: helm lint + helm template with placeholder cluster facts
-#   - deploy/apps, deploy/lichess, rendered charts: kubeconform (strict) against Kubernetes
+#   - deploy/apps, deploy/lichess, deploy/network-policies, rendered charts: kubeconform (strict) against Kubernetes
 #     and CRD schemas (datreeio CRDs-catalog; kinds without a schema are reported, not failed)
 set -euo pipefail
 out=$(mktemp -d)
@@ -22,4 +22,4 @@ done
 kubeconform -strict -summary -ignore-missing-schemas \
   -schema-location default \
   -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
-  deploy/apps deploy/lichess deploy/examples "$out"
+  deploy/apps deploy/lichess deploy/examples deploy/network-policies "$out"
