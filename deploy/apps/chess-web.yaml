@@ -1,0 +1,54 @@
+# chess-web (deploy/charts/chess-web): the public dashboard (web/, #67), static files on
+# unprivileged nginx. Reads nothing itself: the browser calls chess-api at /api/v1.
+# - Network: only cloudflared may connect, and it has no egress at all
+#   (deploy/network-policies/chess-web.yaml). Public at chess.<domain>/ through the
+#   route in infra/gitops/edge.tf (after the /api/ route).
+# - Image lichess-web:main from the cluster's ACR, built and signed by images.yml.
+#   Argo CD doesn't see :main move; roll out a new build with
+#     kubectl rollout restart deploy/chess-web -n chess-web
+# ApplicationSet so the registry comes from the cluster facts.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: chess-web
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - clusters:
+        selector:
+          matchLabels:
+            lichess.generops.dev/facts: "true"
+  template:
+    metadata:
+      name: chess-web
+      annotations:
+        argocd.argoproj.io/sync-wave: "3" # with chess-api
+    spec:
+      project: lichess
+      source:
+        repoURL: https://github.com/christufa/lichess-delta-kube.git
+        targetRevision: main
+        path: deploy/charts/chess-web
+        helm:
+          valuesObject:
+            acrLoginServer: '{{ index .metadata.annotations "lichess.generops.dev/acr-login-server" }}'
+      destination:
+        server: '{{ .server }}'
+        namespace: chess-web
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+        managedNamespaceMetadata:
+          labels: # Pod Security Admission (#62): only pods meeting "restricted" may run here
+            pod-security.kubernetes.io/enforce: restricted
+            pod-security.kubernetes.io/enforce-version: latest
+            pod-security.kubernetes.io/warn: restricted
+            pod-security.kubernetes.io/audit: restricted
+        retry:
+          limit: 10
+          backoff: { duration: 30s, factor: 2, maxDuration: 5m }

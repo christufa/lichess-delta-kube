@@ -6,9 +6,9 @@
 # only var.access_allowed_emails; cloudflared re-checks the Access token (aud) for every
 # request, so traffic can't reach the origin without passing Access.
 #
-# Public routes (no Access): <prefix>.<domain> with a path each. Only /api/ for now: the
-# read-only data API (#66), which rate-limits per client IP (CF-Connecting-IP) and can only
-# read lake.gold. Every other path on that host is a 404 until the dashboard (#67) serves /.
+# Public routes (no Access) on <prefix>.<domain>, matched in order: /api/ is the read-only
+# data API (#66), which rate-limits per client IP (CF-Connecting-IP) and can only read
+# lake.gold; everything else is the dashboard (#67), static files on nginx.
 # https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/
 locals {
   private_hosts = {
@@ -41,12 +41,18 @@ locals {
     }
   }
   public_hostname = var.hostname_prefix == "" ? var.domain : "${var.hostname_prefix}.${var.domain}"
-  public_routes = {
-    api = {
+  # A list, not a map: cloudflared takes the first rule that matches, so the API's path
+  # must come before the dashboard's catch-all.
+  public_routes = [
+    {
       path    = "^/api/"
       service = "http://chess-api.chess-api.svc.cluster.local:80"
-    }
-  }
+    },
+    {
+      path    = null # every other path
+      service = "http://chess-web.chess-web.svc.cluster.local:80"
+    },
+  ]
   tunnel_hosts = {
     aks = { for k, h in local.private_hosts : k => h if k != "lab" }
     lab = { for k, h in local.private_hosts : k => h if k == "lab" }
@@ -132,7 +138,7 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "aks" {
           }
         }
       }],
-      [for k, r in local.public_routes : {
+      [for r in local.public_routes : {
         hostname = local.public_hostname
         path     = r.path
         service  = r.service
