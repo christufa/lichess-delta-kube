@@ -34,7 +34,26 @@ spec:
           rbac:
             create: true
 
+        # Pod Security "restricted" (#62). The chart already drops capabilities and runs as
+        # non-root; add the seccomp profile, and the same settings for every workflow pod:
+        # the executor's init/wait containers, and the main container of each template
+        # (a template's own securityContext still wins).
+        executor:
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+            seccompProfile: { type: RuntimeDefault }
+        mainContainer:
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+            seccompProfile: { type: RuntimeDefault }
+
         controller:
+          podSecurityContext:
+            seccompProfile: { type: RuntimeDefault }
           workflowNamespaces:
             - lichess
           metricsConfig:
@@ -44,6 +63,9 @@ spec:
           workflowDefaults:
             spec:
               serviceAccountName: lichess-jobs
+              securityContext:
+                runAsNonRoot: true
+                seccompProfile: { type: RuntimeDefault }
               podMetadata:
                 labels:
                   azure.workload.identity/use: "true"
@@ -62,6 +84,8 @@ spec:
                 secondsAfterCompletion: 604800 # keep finished workflows in the UI for 7 days
 
         server:
+          podSecurityContext:
+            seccompProfile: { type: RuntimeDefault }
           # Reached only through `kubectl port-forward` (#45 for public access + SSO).
           authModes: [server]
           secure: false

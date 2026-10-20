@@ -10,6 +10,6 @@ eso:
 # Signature check for our images (templates/image-verification.yaml).
 imageVerification:
   enabled: true
-  validationActions: [Audit] # → [Deny] once reports show every lichess-* pod passes
-  failurePolicy: Ignore      # → Fail together with Deny
+  validationActions: [Deny] # every lichess-* pod passed in audit (#62)
+  failurePolicy: Fail
   signerIdentity: https://github.com/christufa/lichess-delta-kube/.github/workflows/images.yml@refs/heads/main

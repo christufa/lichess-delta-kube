@@ -11,8 +11,13 @@ spec:
   entrypoint: list-manifests
   templates:
     - name: list-manifests
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532 # the azure-cli image runs as root by default; az only needs a writable HOME
       container:
         image: mcr.microsoft.com/azure-cli:latest
+        env:
+          - { name: HOME, value: /tmp }
         envFrom:
           - configMapRef:
               name: lichess-config # LAKE_ACCOUNT, LAKE_CONTAINER, … (Terraform, infra/gitops)

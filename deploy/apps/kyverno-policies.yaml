@@ -1,7 +1,9 @@
 # Pod Security Standards as Kyverno CEL ValidatingPolicies (official kyverno-policies chart).
-# Profile "restricted" (includes "baseline"). Rollout: Audit first: violations show up as
-# PolicyReports (kubectl get policyreport -A) without blocking anything. Switching
-# validationFailureAction (or individual policies) to Enforce comes once reports are clean.
+# Profile "restricted" (includes "baseline"), cluster-wide in Audit: violations show up as
+# PolicyReports (kubectl get policyreport -A) without blocking anything.
+# Enforcement (#62) is Kubernetes Pod Security Admission, "restricted", on the namespaces we
+# own (lichess via infra/gitops, trino via managedNamespaceMetadata), so third-party charts'
+# install jobs elsewhere can't be blocked by a policy they were never tested against.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
