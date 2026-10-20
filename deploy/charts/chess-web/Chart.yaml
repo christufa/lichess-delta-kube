@@ -1,0 +1,8 @@
+apiVersion: v2
+name: chess-web
+description: >-
+  The public dashboard (web/): static files on unprivileged nginx, in namespace chess-web.
+  The registry comes from the Argo CD cluster secret written by infra/gitops, through the
+  `chess-web` ApplicationSet; nothing deployment-specific is in git.
+type: application
+version: 0.1.0

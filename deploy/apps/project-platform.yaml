@@ -24,6 +24,7 @@ spec:
     - { server: https://kubernetes.default.svc, namespace: cert-manager }
     - { server: https://kubernetes.default.svc, namespace: trino }
     - { server: https://kubernetes.default.svc, namespace: chess-api }
+    - { server: https://kubernetes.default.svc, namespace: chess-web }
   clusterResourceWhitelist: []
   namespaceResourceWhitelist:
     - group: cilium.io

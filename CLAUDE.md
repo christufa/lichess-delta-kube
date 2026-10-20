@@ -42,6 +42,8 @@ dashboard, an MCP server and a chat on `chess-*.generops.dev`. It's a portfolio 
 | `deploy/network-policies` | Cilium default-deny ingress per namespace + explicit allows |
 | `ingest/` | lichess-ingest (torrent/HTTPS download, parse to Parquet, claims, manifests) |
 | `spark/` | Spark 4.1 + Iceberg 1.12 image, `lichess_spark` (session, catalog `lake`, `wap` write-audit-publish + lineage, `raw`, `curated`, `player_games`, `gold`, `maintenance`), jobs, notebook image |
+| `api/` | chess-api: read-only FastAPI over `lake.gold` via Trino; `openapi.json` is the contract |
+| `web/` | chess-web: the public dashboard (React 19, Vite, TanStack Router/Query, Tailwind v4 + shadcn/ui, ECharts), client generated from `api/openapi.json`, nginx image |
 | `docs/adr` | decisions; 0001 bucketing (player_games: `bucket(16, player_id)`) |
 
 ## Current state (2026-10-20)
@@ -69,8 +71,8 @@ checks in `lake.ops.dq_results`):
   by the non-blocking `played_at_in_month` check, not dropped.
 
 Next (issues in milestones Phase 4–7):
-1. Data API (FastAPI, #66; in progress), then the public dashboard (React+TS+Vite, #67)
-   on `chess.generops.dev`.
+1. Public dashboard (#67) on `chess.generops.dev` (`web/`, namespace `chess-web`): Overview
+   and Openings over the data API (#66, `/api/v1`); the explorer board and chat come later.
 2. Kyverno audit → enforce (#62), cost export to the lake (#31), ADRs for decisions already
    made (#5, #10, #15, #7).
 3. Later, by choice: opening explorer `gold.position_moves` (#65), per-position data (#29),

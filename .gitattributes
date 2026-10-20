@@ -3,3 +3,6 @@
 Dockerfile text eol=lf
 # The OpenAPI contract is compared byte for byte with what the code generates.
 api/openapi.json text eol=lf
+# The generated API client is compared with a fresh generation in CI (web/).
+web/src/api/generated/** text eol=lf
+web/nginx/* text eol=lf

@@ -1,0 +1,63 @@
+# chess-web: nginx serving the dashboard's static build on :8080. cloudflared sends
+# chess.<domain>/ here (/api/ goes to chess-api); /healthz is only for the kubelet.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chess-web
+  labels:
+    app.kubernetes.io/name: chess-web
+spec:
+  replicas: {{ .Values.replicas }}
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: chess-web
+  strategy:
+    rollingUpdate: { maxSurge: 1, maxUnavailable: 0 }
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: chess-web
+    spec:
+      serviceAccountName: chess-web
+      automountServiceAccountToken: false
+      nodeSelector:
+        kubernetes.azure.com/agentpool: system
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: chess-web
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101 # nginx in nginx-unprivileged
+        runAsGroup: 101
+        seccompProfile: { type: RuntimeDefault }
+      terminationGracePeriodSeconds: 15
+      containers:
+        - name: web
+          image: {{ printf "%s/%s:%s" (required "acrLoginServer is required" .Values.acrLoginServer) .Values.image.repository .Values.image.tag | quote }}
+          imagePullPolicy: Always # :main moves; Kyverno pins each pod to the signed digest
+          ports:
+            - { name: http, containerPort: 8080 }
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 20
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp } # nginx's pid and temp files
+      volumes:
+        - name: tmp
+          emptyDir: { medium: Memory, sizeLimit: 16Mi }

@@ -1,0 +1,37 @@
+# chess-web: default-deny in both directions. It serves static files to the public internet
+# (through cloudflared) and needs nothing else: no egress at all, not even DNS.
+#
+# Allowed in:
+#   - cloudflared → :8080 (the chess.<domain>/ route)
+#   - kubelet probes: Cilium always allows the local node (host) to reach its pods
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: default-deny
+  namespace: chess-web
+spec:
+  endpointSelector: {}
+  ingress:
+    - fromEndpoints:
+        - {} # any pod in this namespace
+  egress:
+    - toEndpoints:
+        - {} # any pod in this namespace
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-cloudflared
+  namespace: chess-web
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: chess-web
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: cloudflared
+            app.kubernetes.io/name: cloudflared
+      toPorts:
+        - ports:
+            - { port: "8080", protocol: TCP }

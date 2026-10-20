@@ -64,6 +64,18 @@ jobs:
               for i in $(seq 20); do curl -fsS localhost:8000/healthz && break; sleep 1; done
               curl -fsS localhost:8000/api/openapi.json | python3 -c "import json,sys; assert '/api/v1/summary' in json.load(sys.stdin)['paths']"
               docker stop api
+          - image: lichess-web # the dashboard (namespace chess-web); Playwright runs in ci.yml
+            context: web
+            target: runtime
+            pretest_target: test # lint, typecheck, unit tests
+            smoke: |
+              docker run -d --rm --read-only --tmpfs /tmp --cap-drop ALL --name web -p 8080:8080 "$IMAGE"
+              for i in $(seq 20); do curl -fsS localhost:8080/healthz && break; sleep 1; done
+              curl -fsS localhost:8080/ | grep -q 'id="root"'
+              curl -fsS localhost:8080/openings | grep -q 'id="root"' # client-side route: index.html
+              curl -fsSI localhost:8080/ | grep -qi '^content-security-policy:'
+              test "$(curl -s -o /dev/null -w '%{http_code}' localhost:8080/api/v1/months)" = 404
+              docker stop web
           - image: lichess-notebook
             context: spark
             target: notebook
