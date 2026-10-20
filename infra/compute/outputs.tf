@@ -78,3 +78,8 @@ output "lakekeeper_identity_client_id" {
 output "trino_identity_client_id" {
   value = azurerm_user_assigned_identity.trino.client_id
 }
+
+output "cost_resource_groups" {
+  description = "Resource groups whose costs go into lake.gold.azure_cost (#31)"
+  value       = local.cost_resource_groups
+}
