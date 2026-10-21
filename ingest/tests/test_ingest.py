@@ -45,6 +45,8 @@ def test_inventory_and_month_selection(lichess):
     assert [e.month for e in select_months(entries, "2013")] == ["2013-01", "2013-02"]
     assert [e.month for e in select_months(entries, "2013-02:2014-01")] == ["2013-02", "2014-01"]
     assert [e.month for e in select_months(entries, "2014-01,2013-01")] == ["2013-01", "2014-01"]
+    assert [e.month for e in select_months(entries, "2013:2014")] == ["2013-01", "2013-02", "2014-01"]  # years inclusive
+    assert [e.month for e in select_months(entries, "2013-02:2014")] == ["2013-02", "2014-01"]
     with pytest.raises(ValueError):
         select_months(entries, "2020-01")
 

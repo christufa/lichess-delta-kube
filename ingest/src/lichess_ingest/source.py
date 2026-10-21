@@ -75,7 +75,7 @@ def fetch_inventory(base_url: str = DEFAULT_BASE_URL) -> list[MonthEntry]:
 
 
 def select_months(entries: list[MonthEntry], spec: str | None) -> list[MonthEntry]:
-    """spec: None (all), 'YYYY-MM', 'YYYY-MM:YYYY-MM' (inclusive), or a comma-separated mix."""
+    """spec: None (all), 'YYYY', 'YYYY-MM', a range of either ('2016:2019', inclusive), or a comma-separated mix."""
     if not spec:
         return list(entries)
     wanted = []
@@ -83,6 +83,8 @@ def select_months(entries: list[MonthEntry], spec: str | None) -> list[MonthEntr
         part = part.strip()
         if ":" in part:
             lo, hi = (p.strip() for p in part.split(":", 1))
+            # A bare year covers its whole year: '2016:2019' ends with 2019-12, not before 2019-01.
+            lo, hi = (lo + "-01" if len(lo) == 4 else lo), (hi + "-12" if len(hi) == 4 else hi)
             wanted += [e for e in entries if lo <= e.month <= hi]
         else:
             match = [e for e in entries if e.month == part or e.month.startswith(part + "-")]
