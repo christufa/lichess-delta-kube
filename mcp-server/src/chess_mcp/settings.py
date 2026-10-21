@@ -34,7 +34,8 @@ class Settings(BaseSettings):
     # Per user (Entra object id): queries per minute.
     queries_per_minute: int = 30
 
-    port: int = 8000
+    # Not `port`: Kubernetes injects CHESS_MCP_PORT=tcp://… for a Service named chess-mcp.
+    http_port: int = 8000
     log_level: str = "INFO"
 
     @property

@@ -36,5 +36,5 @@ def main() -> None:
 
     settings = Settings()
     setup_logging(settings.log_level)
-    uvicorn.run(create_app(settings), host="0.0.0.0", port=settings.port, log_config=None,  # noqa: S104
+    uvicorn.run(create_app(settings), host="0.0.0.0", port=settings.http_port, log_config=None,  # noqa: S104
                 proxy_headers=True, forwarded_allow_ips="*")
