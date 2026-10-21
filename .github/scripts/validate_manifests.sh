@@ -19,6 +19,19 @@ for chart in deploy/charts/*/; do
   echo "rendered $chart"
 done
 
+# chess-api / chess-web as Argo CD renders them once deploy-state holds a build (images.yml,
+# job release): the image is pinned by digest.
+digest=sha256:$(printf '%064d' 0)
+for name in chess-api chess-web; do
+  helm template "$name" "deploy/charts/$name" \
+    --set acrLoginServer=acrexample.azurecr.io \
+    --set image.digest="$digest" \
+    --set image.commit=0123456789abcdef0123456789abcdef01234567 > "$out/$name-pinned.yaml"
+  grep -q "image: \"acrexample.azurecr.io/lichess-${name#chess-}@$digest\"" "$out/$name-pinned.yaml" \
+    || { echo "$name: image not pinned to the digest"; exit 1; }
+  echo "rendered $name pinned to a digest"
+done
+
 kubeconform -strict -summary -ignore-missing-schemas \
   -schema-location default \
   -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
