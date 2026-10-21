@@ -1,0 +1,124 @@
+# chess-chat: the chat backend on :8000. Public at https://chess.<domain>/api/v1/chat through
+# cloudflared; every request needs an Entra token with app role Chat.User. One replica: it owns the
+# spend ledger (SQLite on a ReadWriteOnce disk), so the daily cap is one number, kept across restarts.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chess-chat
+  labels:
+    app.kubernetes.io/name: chess-chat
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: chess-chat
+  strategy:
+    type: Recreate # the disk attaches to one pod at a time
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: chess-chat
+        azure.workload.identity/use: "true" # projected token + AZURE_* variables for the MCP sign-in
+      {{- with .Values.image.commit }}
+      annotations:
+        lichess.generops.dev/commit: {{ . | quote }} # the main commit the image was built from
+      {{- end }}
+    spec:
+      serviceAccountName: chess-chat
+      automountServiceAccountToken: false
+      enableServiceLinks: false # no CHESS_CHAT_PORT=tcp://… variables: they collide with settings
+      nodeSelector:
+        kubernetes.azure.com/agentpool: system
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001 # the ledger disk is writable by the app user
+        seccompProfile: { type: RuntimeDefault }
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: chat
+          {{- $image := printf "%s/%s" (required "acrLoginServer is required" .Values.acrLoginServer) .Values.image.repository }}
+          {{- if .Values.image.digest }}
+          {{- if not (regexMatch "^sha256:[0-9a-f]{64}$" .Values.image.digest) }}{{ fail "image.digest must be sha256:<64 hex>" }}{{ end }}
+          image: {{ printf "%s@%s" $image .Values.image.digest | quote }} # a new build changes this, so Argo CD rolls it out
+          imagePullPolicy: IfNotPresent
+          {{- else }}
+          image: {{ printf "%s:%s" $image .Values.image.tag | quote }}
+          imagePullPolicy: Always
+          {{- end }}
+          ports:
+            - { name: http, containerPort: 8000 }
+          env:
+            - { name: CHESS_CHAT_TENANT_ID, value: {{ required "entra.tenantId is required" .Values.entra.tenantId | quote }} }
+            - { name: CHESS_CHAT_CLIENT_ID, value: {{ required "entra.chatClientId is required" .Values.entra.chatClientId | quote }} }
+            - { name: CHESS_CHAT_MCP_CLIENT_ID, value: {{ required "entra.mcpClientId is required" .Values.entra.mcpClientId | quote }} }
+            - { name: CHESS_CHAT_MCP_URL, value: {{ .Values.mcpUrl | quote }} }
+            - { name: CHESS_CHAT_MODEL, value: {{ .Values.model | quote }} }
+            - { name: CHESS_CHAT_EFFORT, value: {{ .Values.effort | quote }} }
+            - { name: CHESS_CHAT_DAILY_CAP_USD, value: {{ .Values.dailyCapUsd | quote }} }
+            - { name: CHESS_CHAT_USER_DAILY_CAP_USD, value: {{ .Values.userDailyCapUsd | quote }} }
+            - { name: CHESS_CHAT_LEDGER_PATH, value: /data/spend.sqlite3 }
+            - name: ANTHROPIC_API_KEY # from Key Vault; without it the chat runs but says it's not configured
+              valueFrom:
+                secretKeyRef: { name: chess-chat-model-key, key: anthropic-api-key, optional: true }
+            {{- with .Values.env }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: ledger, mountPath: /data }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: ledger
+          persistentVolumeClaim:
+            claimName: chess-chat-ledger
+        - name: tmp
+          emptyDir: { medium: Memory, sizeLimit: 32Mi }
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: chess-chat-ledger
+  labels:
+    app.kubernetes.io/name: chess-chat
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: managed-csi
+  resources:
+    requests:
+      storage: 1Gi
+---
+# The model provider's API key, from Key Vault secret `anthropic-api-key` (set it yourself:
+# az keyvault secret set --vault-name <vault> --name anthropic-api-key --value <key>).
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: chess-chat-model-key
+  labels:
+    app.kubernetes.io/name: chess-chat
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: azure-key-vault
+  target:
+    name: chess-chat-model-key
+  data:
+    - secretKey: anthropic-api-key
+      remoteRef:
+        key: anthropic-api-key

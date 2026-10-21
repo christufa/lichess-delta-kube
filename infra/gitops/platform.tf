@@ -23,7 +23,9 @@ locals {
     "aks-oidc-issuer"      = data.azurerm_kubernetes_cluster.main.oidc_issuer_url
     "prometheus-url"       = local.compute.prometheus_query_endpoint
     "grafana-url"          = "https://${local.private_hosts.grafana.hostname}"
-    "mcp-client-id"        = azuread_application.mcp.client_id # the MCP server's Entra app (#68)
+    "mcp-client-id"        = azuread_application.mcp.client_id     # the MCP server's Entra app (#68)
+    "chat-client-id"       = azuread_application.chat.client_id    # the chat's Entra app (#69)
+    "chat-identity-id"     = local.compute.chat_identity_client_id # the chat backend's workload identity
   }
 }
 

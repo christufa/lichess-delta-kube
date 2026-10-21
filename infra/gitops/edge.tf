@@ -49,6 +49,11 @@ locals {
   public_routes = [
     {
       hostname = local.public_hostname
+      path     = "^/api/v1/chat" # the chat backend (#69), before the data API's /api/
+      service  = "http://chess-chat.chess-chat.svc.cluster.local:80"
+    },
+    {
+      hostname = local.public_hostname
       path     = "^/api/"
       service  = "http://chess-api.chess-api.svc.cluster.local:80"
     },

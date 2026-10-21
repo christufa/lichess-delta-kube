@@ -1,0 +1,8 @@
+apiVersion: v2
+name: chess-chat
+description: >-
+  The chat backend (chat/, #69) in namespace chess-chat: a model-agnostic agent whose only data
+  access is the lakehouse MCP server. Registry, Entra apps and identity come from the cluster
+  facts through the `chess-chat` ApplicationSet; nothing deployment-specific is in git.
+type: application
+version: 0.1.0

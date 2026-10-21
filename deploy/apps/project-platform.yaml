@@ -26,6 +26,7 @@ spec:
     - { server: https://kubernetes.default.svc, namespace: chess-api }
     - { server: https://kubernetes.default.svc, namespace: chess-web }
     - { server: https://kubernetes.default.svc, namespace: chess-mcp }
+    - { server: https://kubernetes.default.svc, namespace: chess-chat }
   clusterResourceWhitelist: []
   namespaceResourceWhitelist:
     - group: cilium.io

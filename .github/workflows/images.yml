@@ -11,7 +11,7 @@
 # checks the signature at admission (#62), so the cluster runs exactly what CI built.
 #
 # Releases: workflow and Spark pods start fresh each run and pick up :main. The long-running
-# services (chess-api, chess-web, chess-mcp) wouldn't, so job `release` commits their new digests to
+# services (chess-api, chess-web, chess-mcp, chess-chat) wouldn't, so job `release` commits their new digests to
 # the deploy-state branch, which their ApplicationSets read (deploy/README.md).
 name: images
 
@@ -42,6 +42,7 @@ jobs:
       chess-api: ${{ steps.record.outputs.chess-api }}
       chess-web: ${{ steps.record.outputs.chess-web }}
       chess-mcp: ${{ steps.record.outputs.chess-mcp }}
+      chess-chat: ${{ steps.record.outputs.chess-chat }}
     strategy:
       fail-fast: false
       matrix:
@@ -86,6 +87,18 @@ jobs:
               test "$(curl -s -o /dev/null -w '%{http_code}' -X POST localhost:8000/mcp -H 'Content-Type: application/json' -d '{}')" = 401
               curl -fsS localhost:8000/.well-known/oauth-protected-resource | python3 -c "import json,sys; assert json.load(sys.stdin)['scopes_supported']"
               docker stop mcp
+          - image: lichess-chat # the chat backend (namespace chess-chat, #69)
+            release: chess-chat
+            context: chat
+            target: runtime
+            pretest_target: test
+            smoke: |
+              docker run -d --rm --read-only --tmpfs /data --cap-drop ALL --name chat -p 8000:8000 \
+                -e CHESS_CHAT_TENANT_ID=00000000-0000-0000-0000-000000000000 \
+                -e CHESS_CHAT_CLIENT_ID=00000000-0000-0000-0000-000000000003 "$IMAGE"
+              for i in $(seq 20); do curl -fsS localhost:8000/healthz && break; sleep 1; done
+              test "$(curl -s -o /dev/null -w '%{http_code}' -X POST localhost:8000/api/v1/chat -d '{}')" = 401
+              docker stop chat
           - image: lichess-web # the dashboard (namespace chess-web); Playwright runs in ci.yml
             release: chess-web
             context: web
@@ -201,12 +214,12 @@ jobs:
         if: env.PUBLISH == 'true' && matrix.release
         run: echo "${{ matrix.release }}=${{ steps.push.outputs.digest }}" >> "$GITHUB_OUTPUT"
 
-  # Commit the new chess-api / chess-web / chess-mcp digests to the deploy-state branch, so Argo CD sees
+  # Commit the new chess-api / chess-web / chess-mcp / chess-chat digests to the deploy-state branch, so Argo CD sees
   # a change and rolls them out. Its own job so that only checkout runs with write access,
   # and an app whose image failed keeps its last good build. deploy-state is not main:
   # main's ruleset (PRs + review) still holds, and GITHUB_TOKEN pushes don't start workflows.
   release:
-    name: release chess-api, chess-web, chess-mcp
+    name: release chess-api, chess-web, chess-mcp, chess-chat
     needs: image
     if: ${{ !cancelled() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-24.04
@@ -222,4 +235,5 @@ jobs:
           CHESS_API: ${{ needs.image.outputs.chess-api }}
           CHESS_WEB: ${{ needs.image.outputs.chess-web }}
           CHESS_MCP: ${{ needs.image.outputs.chess-mcp }}
+          CHESS_CHAT: ${{ needs.image.outputs.chess-chat }}
         run: .github/scripts/release_state.sh

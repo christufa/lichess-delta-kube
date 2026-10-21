@@ -48,6 +48,8 @@ spec:
       namespace: chess-web
     - server: https://kubernetes.default.svc
       namespace: chess-mcp
+    - server: https://kubernetes.default.svc
+      namespace: chess-chat
   # Charts like Argo Workflows install CRDs and cluster roles.
   clusterResourceWhitelist:
     - group: "*"

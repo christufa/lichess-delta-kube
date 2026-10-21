@@ -7,6 +7,9 @@ api://<app>/MCP.Access) is granted only when the token has *both*:
   - the delegated scope `scp` MCP.Access: the client asked for it, and
   - the app role `roles` Lakehouse.Query: the user is assigned to the app in Entra.
 
+Or, for an application signing in as itself (client credentials, e.g. the chat backend's
+workload identity): an app-only token (`idtyp` app, no `scp`) with app role Lakehouse.Query.
+
 Without the role a valid token still authenticates but lacks the scope, so the SDK answers
 403 insufficient_scope; an invalid or missing token gets 401 with the resource metadata URL.
 """
@@ -23,6 +26,8 @@ from mcp.server.auth.provider import AccessToken
 from .settings import Settings
 
 log = logging.getLogger(__name__)
+# Claims kept on the AccessToken: who is calling (audit) and what they may do.
+KEPT_CLAIMS = ("iss", "tid", "oid", "name", "preferred_username", "roles", "scp", "idtyp", "app_displayname")
 
 
 class EntraTokenVerifier:
@@ -61,7 +66,8 @@ class EntraTokenVerifier:
         delegated = set((claims.get("scp") or "").split())
         roles = set(claims.get("roles") or [])
         scopes = sorted(delegated | {f"role:{r}" for r in roles})
-        if self.s.delegated_scope in delegated and self.s.required_role in roles:
+        app_only = claims.get("idtyp") == "app" and not delegated
+        if self.s.required_role in roles and (self.s.delegated_scope in delegated or app_only):
             scopes.append(self.s.scope)
         return AccessToken(
             token=token,
@@ -69,7 +75,7 @@ class EntraTokenVerifier:
             scopes=scopes,
             expires_at=claims.get("exp"),
             subject=str(claims.get("oid") or claims.get("sub")),
-            claims={k: claims.get(k) for k in ("iss", "tid", "oid", "name", "preferred_username", "roles", "scp")},
+            claims={k: claims.get(k) for k in KEPT_CLAIMS},
         )
 
 
@@ -80,6 +86,7 @@ def user_of(token: AccessToken | None) -> dict[str, str]:
     c = token.claims or {}
     return {
         "oid": token.subject or "",
-        "user": str(c.get("preferred_username") or c.get("name") or token.subject),
+        "user": str(c.get("preferred_username") or c.get("name") or c.get("app_displayname")
+                    or token.subject),
         "client": token.client_id,
     }

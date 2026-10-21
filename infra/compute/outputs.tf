@@ -83,3 +83,13 @@ output "cost_resource_groups" {
   description = "Resource groups whose costs go into lake.gold.azure_cost (#31)"
   value       = local.cost_resource_groups
 }
+
+output "chat_identity_client_id" {
+  description = "Managed identity of the chat backend (workload identity for chess-chat, #69)"
+  value       = azurerm_user_assigned_identity.chat.client_id
+}
+
+output "chat_identity_principal_id" {
+  description = "Its service principal: infra/gitops assigns it the MCP app's role Lakehouse.Query"
+  value       = azurerm_user_assigned_identity.chat.principal_id
+}

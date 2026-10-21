@@ -1,0 +1,45 @@
+[project]
+name = "chess-chat"
+version = "0.1.0"
+description = "Chat on the Lichess lakehouse: a model-agnostic agent whose only data access is the MCP server"
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+# Exact pins: uv.lock pins the whole tree, Renovate proposes the bumps.
+dependencies = [
+    "fastapi==0.156.2",
+    "httpx2==2.15.1",
+    "pydantic==2.14.1",
+    "pydantic-ai-slim[anthropic,mcp,ui]==2.58.0",
+    "pydantic-settings==2.16.1",
+    "pyjwt[crypto]==2.15.1",
+    "uvicorn==0.54.0",
+]
+
+[project.scripts]
+chess-chat = "chess_chat:main"
+
+[build-system]
+requires = ["uv_build>=0.13.1,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest==9.1.1",
+    "ruff==0.17.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-p no:cacheprovider"
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S"]
+ignore = ["S101"] # assert is how pytest checks
+
+[tool.ruff.lint.per-file-ignores]
+"src/chess_chat/agent.py" = ["E501"] # the instructions are prose
+"tests/*" = ["S105", "S106"] # fake tokens

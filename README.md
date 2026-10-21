@@ -8,10 +8,11 @@ Service, deployed from this repository with GitOps.
 **Live:** **https://chess.generops.dev** (dashboard) · **https://chess.generops.dev/api/docs** (API)
 
 > **About access.** Only the *public* endpoints below are open to everyone. The *private* ones
-> (Argo CD, Argo Workflows, Grafana, JupyterLab, and the MCP server and chat once they ship)
-> sit behind a Microsoft Entra ID sign-in and let in **only accounts the owner has assigned**.
-> If you're not one of them you'll see a Microsoft or Cloudflare sign-in page and then be
-> refused: that's expected, not an outage. The *internal* services exist only inside the
+> (Argo CD, Argo Workflows, Grafana, JupyterLab, the MCP server, and sending messages in the
+> chat) sit behind a Microsoft Entra ID sign-in and let in **only accounts the owner has
+> assigned**. If you're not one of them you'll see a Microsoft or Cloudflare sign-in page and
+> then be refused, or get `401`/`403` from the MCP server and the chat: that's expected, not an
+> outage. The *internal* services exist only inside the
 > cluster and can't be reached from the internet at all.
 
 ## What's in the lake
@@ -72,10 +73,14 @@ Visitors without an assigned account are refused (see *About access* above).
 | Grafana | https://chess-grafana.generops.dev | cluster, workflow and Spark metrics (Azure Managed Prometheus) |
 | JupyterLab | https://chess-lab.generops.dev | notebooks with a Spark session on the lake; **only up while a notebook workflow runs** |
 
-**In progress:** two more private endpoints, each requiring an Entra token with an app role that
-only assigned accounts get:
-- **MCP server** (#68), for MCP clients such as Claude: `https://chess-mcp.generops.dev/mcp`, app role `Lakehouse.Query`.
-- **Chat on the data** (#69), a panel in the dashboard: everyone can see it, only `Chat.User` accounts can send.
+**Private by Entra token, not by Cloudflare Access.** These need a token with an app role that
+only assigned accounts get. Anyone else gets `401` without a token, or `403` with a token from an
+unassigned account.
+
+| Endpoint | URL | App role | What it's for |
+|---|---|---|---|
+| MCP server ([mcp-server/](mcp-server/README.md)) | `https://chess-mcp.generops.dev/mcp` | `Lakehouse.Query` | MCP clients such as Claude: tools `list_tables`, `describe_table`, `run_sql` (one read-only SELECT over `curated`/`gold`), `get_game` |
+| Chat ([chat/](chat/README.md)) | `POST https://chess.generops.dev/api/v1/chat` | `Chat.User` | the dashboard's chat panel: an agent that answers questions with the MCP server; at most $5 of model spend a day |
 
 ### Internal: inside the cluster only, not reachable from the internet
 

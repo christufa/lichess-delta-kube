@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: chess-chat
+  labels:
+    app.kubernetes.io/name: chess-chat
+spec:
+  selector:
+    app.kubernetes.io/name: chess-chat
+  ports:
+    - { name: http, port: 80, targetPort: http }
+# No PodDisruptionBudget: one replica (it owns the spend ledger's disk), so minAvailable: 1 would
+# block node drains. A drain means a short chat outage, which is acceptable.
