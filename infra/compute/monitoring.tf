@@ -93,8 +93,13 @@ resource "azurerm_monitor_action_group" "owner" {
   short_name          = "lichess"
   tags                = local.tags
 
+  # Renamed from "owner" (2026-10-21): no alert email had ever arrived and Azure's test API called
+  # that receiver invalid. A new receiver name makes Azure drop the old one and subscribe the
+  # address afresh (its "unsubscribe" state belongs to the old receiver). Alerts come from
+  # azure-noreply@microsoft.com, azureemail-noreply@microsoft.com and
+  # alerts-noreply@mail.windowsazure.com; allow all three in the mailbox.
   email_receiver {
-    name                    = "owner"
+    name                    = "owner-email"
     email_address           = var.alert_email
     use_common_alert_schema = true
   }
