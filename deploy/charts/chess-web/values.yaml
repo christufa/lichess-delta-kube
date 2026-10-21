@@ -4,7 +4,11 @@ acrLoginServer: ""
 
 image:
   repository: lichess-web # lichess-*: Kyverno checks its cosign signature (charts/platform)
-  tag: main # or a commit SHA to pin an exact build
+  tag: main # used only while no digest is set
+  # Set by CI, not here: images.yml records every signed main build (digest + commit) on
+  # the deploy-state branch, which the ApplicationSet reads as a values file (deploy/README.md).
+  digest: ""
+  commit: ""
 
 replicas: 2
 

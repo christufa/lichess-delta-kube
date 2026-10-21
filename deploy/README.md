@@ -110,6 +110,49 @@ main (`.github/workflows/images.yml`): tests inside the image, Trivy scan, push 
 `:<commit sha>` + `:main` with SBOM and provenance, cosign keyless signature. Pass a
 commit SHA as `image-tag` to pin a run to an exact build.
 
+### Rolling out new builds (chess-api, chess-web)
+
+Workflow and Spark pods are created fresh each run, so they pick up the new `:main`. The
+long-running Deployments would not: Kyverno pins each pod to the digest `:main` had when
+the pod was created, and Argo CD sees no manifest change when `:main` moves. So:
+
+1. `images.yml` builds, tests, scans, pushes and signs `lichess-api` / `lichess-web` on main.
+2. Its `release` job commits each new digest to the **`deploy-state`** branch, one Helm
+   values file per app (`chess-api.yaml`, `chess-web.yaml`: `image.digest`, `image.commit`).
+   An image whose build failed keeps its last good entry; a re-run of an older workflow
+   can't move an entry back to an older commit.
+3. The `chess-api` / `chess-web` ApplicationSets have two sources: the chart from `main`,
+   and `deploy-state` as `ref: state` for `$state/<app>.yaml`. The chart then renders
+   `<acr>/lichess-web@sha256:…`, which Argo CD syncs as a normal rolling update
+   (`maxUnavailable: 0`). The pod template's `lichess.generops.dev/commit` annotation
+   names the main commit.
+4. Kyverno still verifies the cosign signature of that digest at admission. The branch
+   only says *which* signed build to run; a digest not signed by `images.yml` on main is
+   denied whatever the branch says.
+
+Why a branch and not a commit to main: main only takes reviewed PRs (ruleset), which a CI
+bot can't satisfy without a bypass, and bot commits would trigger CI on main again.
+`GITHUB_TOKEN` can push to `deploy-state`, and its pushes start no workflows. Argo CD
+Image Updater would need the same write-back branch plus another controller and its own
+ACR identity. Deploy every main build (not only when `api/` or `web/` changed): `acr purge`
+drops commit-SHA tags after 30 days, so an old pinned digest could disappear. A rollout of
+two replicas per merge is cheap.
+
+Rollback: revert the commit on `deploy-state` (`git revert` and push), or revert the change
+on main, which ships a new build. Without an app's file the chart falls back to `:main`
+(`ignoreMissingValueFiles`); without the branch itself the apps show a ComparisonError
+(running pods are untouched) until `images.yml` creates it on its first main run.
+Protect the branch with a ruleset that blocks deletion and force pushes only; "restrict
+updates" would also block CI.
+
+Check what runs (PowerShell):
+
+```powershell
+git fetch origin deploy-state; git show origin/deploy-state:chess-web.yaml
+kubectl get deploy chess-web -n chess-web -o jsonpath='{.spec.template.spec.containers[0].image}'
+kubectl get pods -n chess-web -o jsonpath='{range .items[*]}{.metadata.annotations.lichess\.generops\.dev/commit}{" "}{end}'
+```
+
 Manual fallback (ACR Tasks, builds in Azure), from the repo root:
 
 ```powershell

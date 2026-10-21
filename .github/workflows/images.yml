@@ -9,6 +9,10 @@
 #
 # Tags: :<commit sha> (immutable) and :main (latest). Kyverno resolves tags to digests and
 # checks the signature at admission (#62), so the cluster runs exactly what CI built.
+#
+# Releases: workflow and Spark pods start fresh each run and pick up :main. The long-running
+# services (chess-api, chess-web) wouldn't, so job `release` commits their new digests to
+# the deploy-state branch, which their ApplicationSets read (deploy/README.md).
 name: images
 
 on:
@@ -34,6 +38,9 @@ jobs:
     permissions:
       contents: read
       id-token: write # Azure OIDC sign-in and cosign keyless signing (used on main only)
+    outputs: # one name per release app; the legs that don't set one leave it empty
+      chess-api: ${{ steps.record.outputs.chess-api }}
+      chess-web: ${{ steps.record.outputs.chess-web }}
     strategy:
       fail-fast: false
       matrix:
@@ -56,6 +63,7 @@ jobs:
               docker run --rm --entrypoint /opt/spark/bin/spark-submit "$IMAGE" --master 'local[2]' /opt/lichess/tests/local_maintenance.py
               docker run --rm --entrypoint /opt/spark/bin/spark-submit "$IMAGE" --master 'local[2]' /opt/lichess/tests/local_cost.py
           - image: lichess-api # the data API (namespace chess-api)
+            release: chess-api # long-running: digest recorded on deploy-state (job release)
             context: api
             target: runtime
             pretest_target: test
@@ -65,6 +73,7 @@ jobs:
               curl -fsS localhost:8000/api/openapi.json | python3 -c "import json,sys; assert '/api/v1/summary' in json.load(sys.stdin)['paths']"
               docker stop api
           - image: lichess-web # the dashboard (namespace chess-web); Playwright runs in ci.yml
+            release: chess-web
             context: web
             target: runtime
             pretest_target: test # lint, typecheck, unit tests
@@ -172,3 +181,30 @@ jobs:
             echo "- digest: \`${{ steps.push.outputs.digest }}\`"
             echo "- signed by: \`${{ github.server_url }}/${{ github.repository }}/.github/workflows/images.yml@refs/heads/main\`"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Record the signed digest for the release job
+        id: record
+        if: env.PUBLISH == 'true' && matrix.release
+        run: echo "${{ matrix.release }}=${{ steps.push.outputs.digest }}" >> "$GITHUB_OUTPUT"
+
+  # Commit the new chess-api / chess-web digests to the deploy-state branch, so Argo CD sees
+  # a change and rolls them out. Its own job so that only checkout runs with write access,
+  # and an app whose image failed keeps its last good build. deploy-state is not main:
+  # main's ruleset (PRs + review) still holds, and GITHUB_TOKEN pushes don't start workflows.
+  release:
+    name: release chess-api, chess-web
+    needs: image
+    if: ${{ !cancelled() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write # push to deploy-state
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # history, to refuse moving deploy-state back to an older commit
+          filter: blob:none
+      - name: Commit digests to deploy-state
+        env:
+          CHESS_API: ${{ needs.image.outputs.chess-api }}
+          CHESS_WEB: ${{ needs.image.outputs.chess-web }}
+        run: .github/scripts/release_state.sh

@@ -4,9 +4,10 @@
 # - Network: only cloudflared may connect, and it may only call Trino and DNS
 #   (deploy/network-policies/chess-api.yaml). Not routed publicly yet: the
 #   chess.generops.dev/api route is added in infra/gitops/edge.tf (#45).
-# - Image lichess-api:main from the cluster's ACR, built and signed by images.yml.
-#   Argo CD doesn't see :main move; roll out a new build with
-#     kubectl rollout restart deploy/chess-api -n chess-api
+# - Image lichess-api from the cluster's ACR, built and signed by images.yml. New builds
+#   roll out without kubectl: after each signed main build, images.yml commits its digest
+#   to the deploy-state branch (chess-api.yaml), read here as a second source, so a new
+#   build is a manifest change Argo CD syncs (deploy/README.md, "Rolling out new builds").
 # ApplicationSet so the registry comes from the cluster facts.
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
@@ -28,13 +29,19 @@ spec:
         argocd.argoproj.io/sync-wave: "3" # with Trino, after the CA bundle (wave 2)
     spec:
       project: lichess
-      source:
-        repoURL: https://github.com/christufa/lichess-delta-kube.git
-        targetRevision: main
-        path: deploy/charts/chess-api
-        helm:
-          valuesObject:
-            acrLoginServer: '{{ index .metadata.annotations "lichess.generops.dev/acr-login-server" }}'
+      sources:
+        - repoURL: https://github.com/christufa/lichess-delta-kube.git
+          targetRevision: main
+          path: deploy/charts/chess-api
+          helm:
+            valueFiles:
+              - $state/chess-api.yaml # image.digest + image.commit, written by images.yml
+            ignoreMissingValueFiles: true # no file yet: the chart falls back to :main
+            valuesObject:
+              acrLoginServer: '{{ index .metadata.annotations "lichess.generops.dev/acr-login-server" }}'
+        - repoURL: https://github.com/christufa/lichess-delta-kube.git
+          targetRevision: deploy-state # only images.yml pushes here; main stays PR-only
+          ref: state
       destination:
         server: '{{ .server }}'
         namespace: chess-api

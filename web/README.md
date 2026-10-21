@@ -76,5 +76,7 @@ The public route is in `infra/gitops/edge.tf` (`public_routes`, after the `/api/
 ```powershell
 kubectl get pods -n chess-web
 kubectl port-forward -n chess-web svc/chess-web 8080:80        # http://localhost:8080
-kubectl rollout restart deploy/chess-web -n chess-web          # pick up a new :main build
 ```
+
+A merge to main rolls out on its own once its image is signed: CI records the digest on the
+`deploy-state` branch, which Argo CD reads ([deploy/README.md](../deploy/README.md#rolling-out-new-builds-chess-api-chess-web)).

@@ -71,5 +71,7 @@ may only reach Trino and DNS (`deploy/network-policies/chess-api.yaml`).
 kubectl get pods -n chess-api
 kubectl exec -n chess-api deploy/chess-api -- python -m chess_api.access_check  # gold yes, curated/raw no
 kubectl port-forward -n chess-api svc/chess-api 8000:80                          # http://localhost:8000/api/docs
-kubectl rollout restart deploy/chess-api -n chess-api                            # pick up a new :main build
 ```
+
+A merge to main rolls out on its own once its image is signed: CI records the digest on the
+`deploy-state` branch, which Argo CD reads ([deploy/README.md](../deploy/README.md#rolling-out-new-builds-chess-api-chess-web)).
