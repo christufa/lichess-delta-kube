@@ -16,4 +16,5 @@ access_allowed_emails = ["you@example.com"]
 #   organization_id    = "00000000-0000-0000-0000-000000000000"
 #   service_account_id = "svac_..."
 #   federation_rule_id = "fdrl_..."
+#   workspace_id       = "wrkspc_..."
 # }

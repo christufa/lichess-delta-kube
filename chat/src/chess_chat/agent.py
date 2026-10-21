@@ -114,8 +114,8 @@ def build_model(settings: Settings) -> Model:
     from pydantic_ai.models.anthropic import AnthropicModel
     from pydantic_ai.providers.anthropic import AnthropicProvider
 
-    missing = [f for f in ("claude_audience_client_id", "anthropic_organization_id", "anthropic_service_account_id")
-               if not getattr(settings, f)]
+    missing = [f for f in ("claude_audience_client_id", "anthropic_organization_id", "anthropic_service_account_id",
+                           "anthropic_workspace_id") if not getattr(settings, f)]
     if missing:
         raise ValueError(f"Anthropic federation needs {', '.join(missing)}")
     credentials = WorkloadIdentityCredentials(
@@ -123,7 +123,7 @@ def build_model(settings: Settings) -> Model:
         federation_rule_id=settings.anthropic_federation_rule_id,
         organization_id=settings.anthropic_organization_id,
         service_account_id=settings.anthropic_service_account_id,
-        workspace_id=settings.anthropic_workspace_id or None,
+        workspace_id=settings.anthropic_workspace_id,
     )
     # Explicit credentials outrank ANTHROPIC_API_KEY, so a stray key can't take over.
     client = AsyncAnthropic(credentials=credentials)

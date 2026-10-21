@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     anthropic_organization_id: str = ""
     anthropic_service_account_id: str = ""
     anthropic_federation_rule_id: str = ""
-    anthropic_workspace_id: str = ""  # optional: the rule's workspace, if it covers only one
+    anthropic_workspace_id: str = ""  # the rule's workspace: the exchange needs it even for one
 
     @property
     def anthropic_federated(self) -> bool:

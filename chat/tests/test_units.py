@@ -1,10 +1,11 @@
+import asyncio
 import urllib.parse
 
 import httpx2
 import pytest
 
 from chess_chat.agent import build_model
-from chess_chat.auth import EntraIdentityToken, NotAllowed, NotSignedIn
+from chess_chat.auth import EntraIdentityToken, NotAllowed, NotSignedIn, WorkloadIdentityAuth
 from chess_chat.ledger import Ledger
 from chess_chat.pricing import UnknownPrice, cost_usd
 
@@ -72,7 +73,8 @@ def test_entra_identity_token(tmp_path):
 def test_build_model_federated(settings, monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-stray")  # must not be what the client uses
     s = settings.model_copy(update={"claude_audience_client_id": "aud", "anthropic_organization_id": "org",
-                                    "anthropic_service_account_id": "svac_1", "anthropic_federation_rule_id": "fdrl_1"})
+                                    "anthropic_service_account_id": "svac_1", "anthropic_federation_rule_id": "fdrl_1",
+                                    "anthropic_workspace_id": "wrkspc_1"})
     model = build_model(s)
     assert model.model_name == "claude-opus-5-5"
     client = model.client
@@ -83,3 +85,30 @@ def test_build_model_federation_incomplete(settings):
     with pytest.raises(ValueError, match="anthropic_organization_id"):
         build_model(settings.model_copy(update={"anthropic_federation_rule_id": "fdrl_1",
                                                 "claude_audience_client_id": "aud"}))
+
+
+def test_workload_identity_auth_async(tmp_path):
+    """The MCP toolset's client is async: the auth flow must work there (it once read the token
+    response itself, which an async stream refuses)."""
+    (tmp_path / "token").write_text("projected-sa-token")
+    env = {"AZURE_FEDERATED_TOKEN_FILE": str(tmp_path / "token"), "AZURE_TENANT_ID": "tenant",
+           "AZURE_CLIENT_ID": "chat-identity"}
+    calls = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        calls.append(request.url.host)
+        if request.url.host == "login.microsoftonline.com":
+            async def body():  # streamed, as over the network
+                yield b'{"access_token": "mcp-token", "expires_in": 3600}'
+            return httpx2.Response(200, content=body(), headers={"Content-Type": "application/json"})
+        return httpx2.Response(200, json={"auth": request.headers["Authorization"]})
+
+    auth = WorkloadIdentityAuth("api://mcp-app/.default", env)
+
+    async def two_requests():
+        async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler), auth=auth) as client:
+            for _ in range(2):
+                assert (await client.get("http://chess-mcp/mcp")).json() == {"auth": "Bearer mcp-token"}
+
+    asyncio.run(two_requests())
+    assert calls == ["login.microsoftonline.com", "chess-mcp", "chess-mcp"]  # token fetched once, cached
