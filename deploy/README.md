@@ -121,8 +121,12 @@ the pod was created, and Argo CD sees no manifest change when `:main` moves. So:
    values file per app (`chess-api.yaml`, `chess-web.yaml`: `image.digest`, `image.commit`).
    An image whose build failed keeps its last good entry; a re-run of an older workflow
    can't move an entry back to an older commit.
-3. The `chess-api` / `chess-web` ApplicationSets have two sources: the chart from `main`,
-   and `deploy-state` as `ref: state` for `$state/<app>.yaml`. The chart then renders
+3. The `chess-api` / `chess-web` ApplicationSets read `<app>.yaml` from `deploy-state` with
+   a git files generator (matrixed with the cluster facts) and pass `image.digest` and
+   `image.commit` to the chart as Helm values; the chart itself comes from `main`. (Not a
+   second Application source: Argo CD refuses two revisions of the same repository in one
+   Application, "cannot reference a different revision of the same repository".) The
+   ApplicationSet controller polls the branch every 3 minutes. The chart then renders
    `<acr>/lichess-web@sha256:…`, which Argo CD syncs as a normal rolling update
    (`maxUnavailable: 0`). The pod template's `lichess.generops.dev/commit` annotation
    names the main commit.
@@ -139,9 +143,10 @@ drops commit-SHA tags after 30 days, so an old pinned digest could disappear. A 
 two replicas per merge is cheap.
 
 Rollback: revert the commit on `deploy-state` (`git revert` and push), or revert the change
-on main, which ships a new build. Without an app's file the chart falls back to `:main`
-(`ignoreMissingValueFiles`); without the branch itself the apps show a ComparisonError
-(running pods are untouched) until `images.yml` creates it on its first main run.
+on main, which ships a new build. If an app's file or the branch went missing, the generator
+would yield no Application; `applicationsSync: create-update` keeps the existing one and
+`preserveResourcesOnDeletion` keeps its workloads, so nothing is torn down (the app just
+stops getting new builds until the file is back).
 Protect the branch with a ruleset that blocks deletion and force pushes only; "restrict
 updates" would also block CI.
 
