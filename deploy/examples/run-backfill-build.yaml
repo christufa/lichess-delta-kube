@@ -1,0 +1,55 @@
+# Not synced by Argo CD: build every landed month through every layer, after a land-only
+# backfill (ingest-backfill with publish=false) (#24).
+#   kubectl create -n lichess -f deploy/examples/run-backfill-build.yaml
+#
+# raw.games → curated.games → curated.player_games → gold, one job per layer, each with
+# --pending (every month its source has that it doesn't) and 4 executors (the whole batch
+# pool: nothing else should run on it meanwhile). Holds both publish locks for the whole run,
+# like lake-maintenance, so the daily monthly run and the weekly maintenance wait for it.
+# Each month is still write-audit-publish: a failed month stays out, the rest go on; re-run to retry.
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: backfill-build-
+  namespace: lichess
+spec:
+  entrypoint: build
+  synchronization:
+    mutexes:
+      - name: raw-games-publish
+      - name: curated-and-gold-publish
+  arguments:
+    parameters:
+      - name: executors
+        value: "4"
+  templates:
+    - name: build
+      steps:
+        - - name: raw
+            template: layer
+            arguments: { parameters: [{ name: job, value: register_raw_games }] }
+        - - name: curated-games
+            template: layer
+            arguments: { parameters: [{ name: job, value: build_curated_games }] }
+        - - name: player-games
+            template: layer
+            arguments: { parameters: [{ name: job, value: build_player_games }] }
+        - - name: gold
+            template: layer
+            arguments: { parameters: [{ name: job, value: build_gold }] }
+
+    - name: layer
+      inputs:
+        parameters:
+          - name: job
+      steps:
+        - - name: spark
+            templateRef:
+              name: spark-job
+              template: spark
+            arguments:
+              parameters:
+                - { name: job, value: "{{inputs.parameters.job}}" }
+                - { name: args, value: '["--pending"]' }
+                - { name: executors, value: "{{workflow.parameters.executors}}" }
+                - { name: image-tag, value: main }
