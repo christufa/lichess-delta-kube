@@ -1,5 +1,5 @@
 import type { RatingBucket, Speed, SummaryRow } from "@/api/generated";
-import { formatPercent } from "./format";
+import { formatPercent, nextMonth } from "./format";
 import { SPEEDS } from "./speeds";
 
 // Pure reshaping of API responses for the charts and tables (unit-tested).
@@ -38,6 +38,30 @@ export interface SpeedSeries {
 /** Months present in the rows, in order. */
 export function monthsOf(rows: readonly SummaryRow[]): string[] {
   return [...new Set(rows.map((r) => r.month))].sort();
+}
+
+/**
+ * Where consecutive months in a sorted list aren't consecutive calendar months: each gap as
+ * the months on either side of it (e.g. ["2015-12", "2026-08"]).
+ */
+export function monthGaps(months: readonly string[]): [string, string][] {
+  const gaps: [string, string][] = [];
+  months.forEach((m, i) => {
+    const next = months[i + 1];
+    if (next && nextMonth(m) !== next) gaps.push([m, next]);
+  });
+  return gaps;
+}
+
+/** The month's value of `metric` for every speed (the `all` rows), in month order. */
+export function allSpeedsSeries(
+  rows: readonly SummaryRow[],
+  metric: (row: SummaryRow) => number | null,
+): number[] {
+  return rows
+    .filter((r) => r.speed === "all")
+    .sort((a, b) => a.month.localeCompare(b.month))
+    .map((r) => metric(r) ?? 0);
 }
 
 /** One series per speed that has games: `metric` for each month (0 where it has no row). */

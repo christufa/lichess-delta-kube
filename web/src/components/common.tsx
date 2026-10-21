@@ -1,5 +1,5 @@
 import { AlertCircle, RotateCw } from "lucide-react";
-import { useId, type ReactNode } from "react";
+import { useId, type CSSProperties, type ReactNode } from "react";
 import { ApiError } from "@/api/client";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -47,9 +47,23 @@ export function SelectField({ label, value, options, onChange, className }: Sele
 }
 
 /** Filters sit in one row above what they filter, wrapping on a phone. */
-export function FilterBar({ children, label }: { children: ReactNode; label: string }) {
+export function FilterBar({ children, label, className }: { children: ReactNode; label: string; className?: string }) {
   return (
-    <div role="group" aria-label={label} className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap sm:items-end">
+    <div role="group" aria-label={label} className={cn("grid grid-cols-2 gap-3 sm:flex sm:flex-wrap sm:items-end", className)}>
+      {children}
+    </div>
+  );
+}
+
+/** A frosted panel for a page's main filters, stuck under the header on larger screens. */
+export function Toolbar({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <div
+      className={cn(
+        "glass animate-rise rounded-2xl border p-3 shadow-lg shadow-black/5 md:sticky md:top-[4.5rem] md:z-30",
+        className,
+      )}
+    >
       {children}
     </div>
   );
@@ -85,7 +99,7 @@ export function QueryError({ error, onRetry }: { error: unknown; onRetry: () => 
 export function LoadingBlock({ className, label = "Loading" }: { className?: string; label?: string }) {
   return (
     <div role="status" aria-live="polite" className={cn("w-full", className)}>
-      <Skeleton className="h-full min-h-16 w-full" />
+      <Skeleton className="h-full min-h-16 w-full rounded-2xl" />
       <span className="sr-only">{label}…</span>
     </div>
   );
@@ -99,15 +113,30 @@ interface ChartCardProps {
   /** The chart's numbers as a table, behind a disclosure (for screen readers and copying). */
   table?: ReactNode;
   className?: string;
+  /** Entrance delay in ms, to stagger cards. */
+  delay?: number;
 }
 
-export function ChartCard({ title, description, action, children, table, className }: ChartCardProps) {
+export function ChartCard({ title, description, action, children, table, className, delay = 0 }: ChartCardProps) {
   const headingId = useId();
   return (
-    <Card className={cn("min-w-0 gap-4", className)} aria-labelledby={headingId} role="region">
+    <Card
+      className={cn(
+        "animate-rise hover:border-brand-1/40 relative min-w-0 gap-4 rounded-2xl shadow-lg shadow-black/5 transition-colors duration-300",
+        className,
+      )}
+      style={{ "--delay": `${delay}ms` } as CSSProperties}
+      aria-labelledby={headingId}
+      role="region"
+    >
+      {/* A thin gradient line along the top edge. */}
+      <span
+        aria-hidden="true"
+        className="via-brand-1/60 pointer-events-none absolute inset-x-8 top-0 h-px bg-linear-to-r from-transparent to-transparent"
+      />
       <CardHeader className="gap-1">
         <CardTitle>
-          <h2 id={headingId} className="text-base font-semibold">
+          <h2 id={headingId} className="text-base font-semibold tracking-tight">
             {title}
           </h2>
         </CardTitle>
@@ -118,7 +147,7 @@ export function ChartCard({ title, description, action, children, table, classNa
         {children}
         {table && (
           <details className="mt-3 text-sm">
-            <summary className="text-muted-foreground hover:text-foreground cursor-pointer rounded-sm select-none">
+            <summary className="text-muted-foreground hover:text-foreground w-fit cursor-pointer rounded-sm transition-colors select-none">
               Show the numbers
             </summary>
             <div className="mt-2 max-h-80 overflow-auto">{table}</div>

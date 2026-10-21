@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { RatingBucket, SummaryRow } from "@/api/generated";
 import {
+  allSpeedsSeries,
   describeResults,
   medianBucket,
+  monthGaps,
   monthKpis,
   ratingHistogram,
   resultsBySpeed,
@@ -110,5 +112,21 @@ describe("describeResults", () => {
       "White wins 50.0%, draws 10.0%, black wins 40.0%",
     );
     expect(describeResults({ white: 50, draws: 10, black: 39, unfinished: 1, games: 100 })).toContain("unfinished 1.0%");
+  });
+});
+
+describe("monthGaps", () => {
+  it("finds where the loaded months skip calendar months", () => {
+    expect(monthGaps(["2015-11", "2015-12", "2026-08", "2026-09"])).toEqual([["2015-12", "2026-08"]]);
+  });
+  it("treats December → January as consecutive", () => {
+    expect(monthGaps(["2014-12", "2015-01"])).toEqual([]);
+  });
+});
+
+describe("allSpeedsSeries", () => {
+  it("takes the all-speed rows in month order", () => {
+    expect(allSpeedsSeries([...rows].reverse(), (r) => r.games)).toEqual([300, 400]);
+    expect(allSpeedsSeries(rows, () => null)).toEqual([0, 0]);
   });
 });
