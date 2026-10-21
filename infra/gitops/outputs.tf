@@ -17,7 +17,7 @@ output "mcp_client_id" {
 
 output "mcp_scope" {
   description = "The scope MCP clients request"
-  value       = "api://${azuread_application.mcp.client_id}/Lakehouse.Query"
+  value       = "api://${azuread_application.mcp.client_id}/MCP.Access"
 }
 
 output "mcp_client_secret" {

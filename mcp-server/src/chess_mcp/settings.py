@@ -18,7 +18,8 @@ class Settings(BaseSettings):
     tenant_id: str = ""
     client_id: str = ""
     app_id_uri: str = ""  # default api://<client_id>; the scope clients ask for is <app_id_uri>/<role>
-    required_role: str = "Lakehouse.Query"
+    required_role: str = "Lakehouse.Query"  # app role: the user is assigned
+    delegated_scope: str = "MCP.Access"  # scope the client asks for (Entra needs it to differ from the role)
 
     # Trino, as the read-only user chess-mcp (lake.curated and lake.gold only).
     trino_host: str = "trino.trino.svc.cluster.local"
@@ -40,7 +41,7 @@ class Settings(BaseSettings):
     def scope(self) -> str:
         """The OAuth scope a client requests and this server requires."""
         uri = self.app_id_uri or f"api://{self.client_id}"
-        return f"{uri}/{self.required_role}"
+        return f"{uri}/{self.delegated_scope}"
 
     @property
     def issuer(self) -> str:

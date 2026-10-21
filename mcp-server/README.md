@@ -35,7 +35,7 @@ The server is an OAuth 2.1 resource server ([MCP authorization](https://modelcon
 
 - `GET /.well-known/oauth-protected-resource` names the authorization server (Entra:
   `https://login.microsoftonline.com/<tenant>/v2.0`) and the scope to request,
-  `api://<client id>/Lakehouse.Query`.
+  `api://<client id>/MCP.Access`.
 - Unauthenticated requests get `401` with `WWW-Authenticate: Bearer … resource_metadata=…`.
 - Tokens are checked against Entra's signing keys, with issuer = the tenant, audience = this app. The required scope is granted only if the token carries both the delegated scope and the assigned app role.
 
@@ -59,7 +59,7 @@ claude.ai → Settings → Connectors → **Add custom connector**:
 
 `npx @modelcontextprotocol/inspector`, then:
 1. Transport *Streamable HTTP*, URL `https://chess-mcp.generops.dev/mcp`.
-2. Under *Authentication*: the client ID and the scope `api://<client id>/Lakehouse.Query`.
+2. Under *Authentication*: the client ID and the scope `api://<client id>/MCP.Access`.
 
 ### Quick check with the Azure CLI
 
