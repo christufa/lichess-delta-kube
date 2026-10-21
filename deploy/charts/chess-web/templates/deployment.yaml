@@ -1,5 +1,7 @@
 # chess-web: nginx serving the dashboard's static build on :8080. cloudflared sends
 # chess.<domain>/ here (/api/ goes to chess-api); /healthz is only for the kubelet.
+# /config.json (the chat's sign-in settings, deployment-specific) comes from the ConfigMap below.
+{{- $chat := and .Values.chat.tenantId .Values.chat.clientId }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -18,10 +20,11 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: chess-web
-      {{- with .Values.image.commit }}
       annotations:
+        {{- with .Values.image.commit }}
         lichess.generops.dev/commit: {{ . | quote }} # the main commit the image was built from
-      {{- end }}
+        {{- end }}
+        checksum/config: {{ include "chess-web.config" . | sha256sum }} # a subPath mount isn't refreshed: restart
     spec:
       serviceAccountName: chess-web
       automountServiceAccountToken: false
@@ -70,6 +73,26 @@ spec:
             capabilities: { drop: [ALL] }
           volumeMounts:
             - { name: tmp, mountPath: /tmp } # nginx's pid and temp files
+            {{- if $chat }}
+            - { name: config, mountPath: /usr/share/nginx/html/config.json, subPath: config.json, readOnly: true }
+            {{- end }}
       volumes:
         - name: tmp
           emptyDir: { medium: Memory, sizeLimit: 16Mi }
+        {{- if $chat }}
+        - name: config
+          configMap: { name: chess-web-config }
+        {{- end }}
+{{- if $chat }}
+---
+# The chat panel's sign-in settings (#69), read by the browser: not secrets (they're in every
+# Entra sign-in URL), but deployment-specific, so they come from the cluster facts.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: chess-web-config
+  labels:
+    app.kubernetes.io/name: chess-web
+data:
+  config.json: {{ include "chess-web.config" . | quote }}
+{{- end }}

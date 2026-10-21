@@ -85,5 +85,13 @@ def test_unavailable_without_a_model_key(settings, ledger, verifier, make_token,
     assert status["available"] is False
 
 
+def test_too_many_messages_413(client, make_token, settings):
+    messages = [{"id": f"m{i}", "role": "user" if i % 2 == 0 else "assistant",
+                 "parts": [{"type": "text", "text": "hi"}]} for i in range(settings.max_messages + 1)]
+    r = client.post("/api/v1/chat", json={"trigger": "submit-message", "id": "chat-1", "messages": messages},
+                    headers={"Authorization": f"Bearer {make_token()}"})
+    assert r.status_code == 413 and r.json()["code"] == "too_large"
+
+
 def test_healthz(client):
     assert client.get("/healthz").text == "ok\n"

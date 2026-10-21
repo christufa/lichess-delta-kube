@@ -2,6 +2,12 @@
 # Empty values fail rendering on purpose.
 acrLoginServer: ""
 
+# The chat panel's sign-in (#69), served as /config.json. Empty: the panel says the chat isn't
+# set up here.
+chat:
+  tenantId: ""
+  clientId: "" # the "chess Chat" app (infra/gitops/chat.tf)
+
 image:
   repository: lichess-web # lichess-*: Kyverno checks its cosign signature (charts/platform)
   tag: main # used only while no digest is set

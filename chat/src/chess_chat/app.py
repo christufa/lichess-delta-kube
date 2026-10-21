@@ -8,6 +8,7 @@ cloudflared routes https://chess.<domain>/api/v1/chat* here (before the data API
 """
 # No `from __future__ import annotations` here: FastAPI resolves the endpoints' Annotated[...,
 # Depends(signed_in)] at runtime, and signed_in is local to create_app.
+import json
 import logging
 import threading
 import time
@@ -46,6 +47,16 @@ class PerUserRate:
                 return False
             q.append(now)
             return True
+
+
+def message_count(body: bytes) -> int:
+    """Messages in a Vercel AI SDK chat request ({"messages": [...]}); malformed counts as 0 and
+    is refused by the adapter instead."""
+    try:
+        messages = json.loads(body).get("messages")
+    except (ValueError, AttributeError):
+        return 0
+    return len(messages) if isinstance(messages, list) else 0
 
 
 def problem(status: int, code: str, detail: str) -> JSONResponse:
@@ -97,13 +108,14 @@ def create_app(settings: Settings | None = None, *, ledger: Ledger | None = None
         if not rate.allow(user.oid):
             return problem(429, "rate_limit", f"at most {settings.chats_per_minute} questions a minute")
         body = await request.body()
-        if len(body) > 512_000:
+        if len(body) > 512_000 or message_count(body) > settings.max_messages:
             return problem(413, "too_large", "the conversation is too long; start a new one")
         current_user.set(user.oid)
         log.info("chat", extra={"oid": user.oid, "bytes": len(body)})
         return await VercelAIAdapter.dispatch_request(
             request,
             agent=agent,
+            sdk_version=7,  # the dashboard's AI SDK (web/package.json: ai 7)
             usage_limits=UsageLimits(request_limit=settings.max_requests_per_run,
                                      tool_calls_limit=settings.max_tool_calls_per_run),
         )

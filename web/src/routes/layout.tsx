@@ -1,8 +1,22 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
-import { useLayoutEffect, useRef } from "react";
+import { Sparkles } from "lucide-react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { getMonthsOptions } from "@/api/generated/@tanstack/react-query.gen";
 import { coverage, usePageTitle } from "@/lib/page";
+import { cn } from "@/lib/utils";
+
+// Sign-in, the AI SDK and markdown load only when someone opens the chat.
+const ChatPanel = lazy(() => import("@/chat/chat-panel"));
+const CHAT_OPEN = "chat-open"; // sessionStorage: reopen after the sign-in redirect / a reload
+
+function readChatOpen(): boolean {
+  try {
+    return sessionStorage.getItem(CHAT_OPEN) === "1";
+  } catch {
+    return false;
+  }
+}
 
 const NAV = [
   { to: "/", label: "Overview" },
@@ -10,11 +24,36 @@ const NAV = [
 ] as const;
 
 /**
- * The page shell: header, main and footer in a column, next to an (empty for now) slot on
- * the right for the chat panel (#69), which will be an <aside> drawer of `--chat-width`.
+ * The page shell: header, main and footer in a column, next to the chat panel (#69): an <aside>
+ * of `--chat-width` beside the page on wide screens, a full-screen sheet on small ones. Once
+ * opened it stays mounted (hidden when closed), so closing it keeps the conversation.
  */
 export function Layout() {
   const months = useQuery(getMonthsOptions());
+  const [chatOpen, setChatOpen] = useState(readChatOpen);
+  const [chatLoaded, setChatLoaded] = useState(chatOpen);
+  const toggle = useRef<HTMLButtonElement>(null);
+
+  function openChat(open: boolean) {
+    setChatOpen(open);
+    if (open) setChatLoaded(true);
+    else toggle.current?.focus();
+    try {
+      sessionStorage.setItem(CHAT_OPEN, open ? "1" : "0");
+    } catch {
+      // storage blocked: the panel just won't reopen by itself
+    }
+  }
+
+  useEffect(() => {
+    if (!chatOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") openChat(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => { window.removeEventListener("keydown", onKey); };
+  }, [chatOpen]);
+
   return (
     <div className="relative flex min-h-dvh">
       <div aria-hidden="true" className="bg-grid pointer-events-none absolute inset-x-0 top-0 -z-10 h-[48rem]" />
@@ -39,7 +78,23 @@ export function Layout() {
                 Lichess <span className="text-muted-foreground font-normal">lakehouse</span>
               </span>
             </Link>
-            <MainNav />
+            <div className="flex items-center gap-2">
+              <MainNav />
+              <button
+                ref={toggle}
+                type="button"
+                onClick={() => { openChat(!chatOpen); }}
+                aria-expanded={chatOpen}
+                aria-controls="chat-panel"
+                className={cn(
+                  "group relative flex items-center gap-1.5 overflow-hidden rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors",
+                  chatOpen ? "bg-foreground text-background" : "bg-background hover:border-brand-1/40",
+                )}
+              >
+                <Sparkles className={cn("size-4", !chatOpen && "text-brand-1")} aria-hidden="true" />
+                Ask
+              </button>
+            </div>
           </div>
         </header>
         <main id="main" className="mx-auto w-full max-w-6xl flex-1 px-4 pt-6 pb-16">
@@ -68,7 +123,18 @@ export function Layout() {
           </div>
         </footer>
       </div>
-      {/* The chat panel (#69) goes here: <aside className="w-(--chat-width) …" />. */}
+      {chatLoaded && (
+        <aside
+          id="chat-panel"
+          aria-label="Chat"
+          hidden={!chatOpen}
+          className="bg-background fixed inset-0 z-50 lg:sticky lg:top-0 lg:z-30 lg:h-dvh lg:w-(--chat-width) lg:shrink-0 lg:border-l"
+        >
+          <Suspense fallback={<p className="shimmer text-muted-foreground p-4 text-sm">Loading the chat…</p>}>
+            <ChatPanel onClose={() => { openChat(false); }} />
+          </Suspense>
+        </aside>
+      )}
     </div>
   );
 }

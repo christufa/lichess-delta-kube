@@ -17,3 +17,6 @@ build/
 ingest/work/
 .ipynb_checkpoints/
 .ruff_cache/
+
+# The chat panel's local sign-in settings (web/src/chat/config.ts)
+web/public/config.json

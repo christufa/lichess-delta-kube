@@ -49,6 +49,9 @@ spec:
         helm:
           valuesObject:
             acrLoginServer: '{{ index .metadata.annotations "lichess.generops.dev/acr-login-server" }}'
+            chat: # the chat panel's Microsoft sign-in (#69), served as /config.json
+              tenantId: '{{ index .metadata.annotations "lichess.generops.dev/tenant-id" }}'
+              clientId: '{{ index .metadata.annotations "lichess.generops.dev/chat-client-id" }}'
             image:
               digest: '{{ .image.digest }}'
               commit: '{{ .image.commit }}'
