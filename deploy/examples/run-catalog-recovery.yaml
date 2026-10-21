@@ -1,0 +1,26 @@
+# Not synced by Argo CD: the catalog's disaster recovery (spark/jobs/catalog_recovery.py,
+# docs/runbooks/catalog-recovery.md).
+#   kubectl create -n lichess -f deploy/examples/run-catalog-recovery.yaml
+# args:
+#   ["snapshot"]              write the inventory (name → location) to <lake>/_catalog/inventory.json
+#   ["drill"]                 read every table from its files alone and compare with the catalog (read-only)
+#   ["live-drill"]            lose and restore a throwaway copy (ops.dr_drill) through Lakekeeper itself
+#   ["restore", "--dry-run"]  after losing the catalog: what would be registered, from which file
+#   ["restore"]               register every inventory table the catalog lacks
+# snapshot and drill run weekly in lake-maintenance.
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: catalog-recovery-
+  namespace: lichess
+spec:
+  workflowTemplateRef:
+    name: spark-job
+  arguments:
+    parameters:
+      - name: job
+        value: catalog_recovery
+      - name: args
+        value: '["drill"]'
+      - name: executors
+        value: "2"
