@@ -36,7 +36,9 @@ minute, `413` conversation too long, `503` not configured (Claude sign-in not se
 - **Spend cap:** every model request is priced from the provider's reported usage as it ends, even when the stream is cut off. Spend is recorded per user and day in SQLite on a persistent disk.
   - New questions are refused once today's total reaches **$5** (`dailyCapUsd`) or a user's reaches their cap (`userDailyCapUsd`).
   - One replica owns the disk, so the cap is one number and survives restarts.
-- **Limits per answer:** 12 model requests, 20 tool calls.
+- **Limits:**
+  - Per answer: 12 model requests and 20 tool calls.
+  - Per conversation: 40 messages or 512 KB, after which the request gets `413` and the panel offers a new chat.
 - **Logs:** one JSON line per model request (user, model, tokens, cost). The MCP server logs the SQL.
 
 ## Setup (owner)

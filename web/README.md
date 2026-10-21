@@ -15,7 +15,13 @@ origin. No sign-in.
 - Filters live in the URL (`/?from=2015-01&to=2015-12&metric=players`,
   `/openings?speed=blitz&band=1600`), so every view can be shared.
 
-The opening explorer (board) and the chat panel from #67 are not built yet.
+- **Chat ("Ask", #69):** a panel beside the page (a full-screen sheet on phones) where invited
+  users ask questions in plain English. Claude answers them through the chat backend
+  ([chat/](../chat/README.md)) with read-only SQL, streaming its reasoning summary, each query
+  it ran (SQL and row count) and the answer (markdown, tables). Everyone sees the panel; only
+  accounts with the "chess Chat" app role can send.
+
+The opening explorer (board) from #67 is not built yet.
 
 ## Design
 
@@ -38,8 +44,26 @@ and Geist Mono, self-hosted from `@fontsource-variable` (bundled by Vite, so the
   gets `animation: false`). The e2e tests run axe once the animations have finished, and a
   reduced-motion test checks that no CSS animation runs.
 
-The layout leaves room for the chat panel (#69): `Layout` puts the page in a column next
-to an empty slot for an `<aside>` drawer.
+The chat panel (#69) is an `<aside>` of `--chat-width` next to the page column in `Layout`
+(lg and up), a full-screen sheet below that; Escape closes it.
+
+### Chat panel
+
+- **Sign-in:** MSAL (`@azure/msal-browser`), auth code + PKCE with no secret, *redirect* flow.
+  A popup won't work, because the page sends `Cross-Origin-Opener-Policy: same-origin`.
+  - Entra returns to `https://<host>/#code=…`; `main.tsx` hands that to MSAL before the router starts, and reopens the panel.
+  - Tokens are for `api://<chat app>/Chat.Access` and are cached in localStorage.
+- **Chat:** the Vercel AI SDK (`useChat` and `DefaultChatTransport`, ai 7), posting to `/api/v1/chat` with the user's token.
+  - chess-chat answers in the UI message stream protocol (Pydantic AI's Vercel AI adapter, `sdk_version=7`).
+  - Its errors (`{code, detail}`: 401, 403, 413, 429, 503) are shown as they come.
+- **Config:** the tenant and the chat app's client ID are deployment-specific, so they aren't in the build.
+  - nginx serves them as `/config.json` from a ConfigMap built from the cluster facts (`deploy/charts/chess-web`).
+  - Without it the panel says the chat isn't set up.
+  - For `npm run dev`, put `{"tenantId": "…", "chatClientId": "…"}` in `public/config.json` (gitignored). `http://localhost:5173/` is a registered redirect URI.
+- **Loading:** MSAL, the AI SDK and the markdown renderer are their own chunks, loaded only when someone opens the panel or comes back from sign-in.
+- **Tests:**
+  - `src/chat/chat-panel.test.tsx` streams a scripted answer (reasoning, a `run_sql` call, markdown) through the real AI SDK against a faked backend, and covers the not-invited, rate-limit and budget states.
+  - `e2e/chat.spec.ts` checks the panel, axe, the phone layout, and that sign-in goes to Microsoft with PKCE and the right scope and redirect URI. Against nginx, it also catches CSP violations.
 
 ### Third-party components and licenses
 
@@ -79,7 +103,7 @@ $env:CHESS_API_URL = "http://localhost:8000"; npm run dev   # or to a port-forwa
 npm run generate             # after api/openapi.json changes; commit src/api/generated
 npm run lint
 npm run typecheck
-npm test                     # Vitest: data shaping, URL params, the API client
+npm test                     # Vitest: data shaping, URL params, the API client, the chat panel
 npm run build
 npx playwright install chromium
 npm run e2e                  # Playwright + axe on the build, API mocked (e2e/fixtures.ts), desktop and 375 px
@@ -91,7 +115,10 @@ npm run e2e                  # Playwright + axe on the build, API mocked (e2e/fi
 build on `nginxinc/nginx-unprivileged` (uid 101, port 8080, `/healthz`), with
 [`nginx/nginx.conf`](nginx/nginx.conf): client-side routes fall back to `index.html`,
 hashed assets are cached for a year, `index.html` never, `/api/` is a 404 (cloudflared
-routes it to chess-api first), and every response has a strict Content-Security-Policy.
+routes it to chess-api and chess-chat first), `/config.json` is the mounted chat config or a
+404, and every response has a strict Content-Security-Policy. The CSP allows only one other
+origin, `https://login.microsoftonline.com`, for the chat's sign-in (`connect-src` for tokens,
+`frame-src` for silent renewal).
 It runs with a read-only root filesystem; nginx writes only to `/tmp`. CI builds it as
 `lichess-web` (`.github/workflows/images.yml`): the `lichess-*` name means Kyverno checks its
 cosign signature at admission.
