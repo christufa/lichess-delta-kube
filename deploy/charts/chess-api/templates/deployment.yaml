@@ -25,6 +25,7 @@ spec:
     spec:
       serviceAccountName: chess-api
       automountServiceAccountToken: false
+      enableServiceLinks: false # no <SERVICE>_PORT=tcp://… variables: they collide with app settings
       nodeSelector:
         kubernetes.azure.com/agentpool: system
       topologySpreadConstraints:

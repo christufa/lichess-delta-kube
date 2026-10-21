@@ -48,3 +48,11 @@ def test_signed_by_another_key(verifier, settings):
 
 def test_garbage(verifier):
     assert verify(verifier, "not-a-jwt") is None
+
+
+def test_kubernetes_service_variables_dont_break_settings(monkeypatch):
+    # A Service named chess-mcp makes Kubernetes inject CHESS_MCP_PORT=tcp://…; it must be ignored.
+    from chess_mcp.settings import Settings
+    monkeypatch.setenv("CHESS_MCP_PORT", "tcp://10.0.0.1:80")
+    monkeypatch.setenv("CHESS_MCP_SERVICE_PORT", "80")
+    assert Settings().http_port == 8000
