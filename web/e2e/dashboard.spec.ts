@@ -38,8 +38,8 @@ test.describe("overview", () => {
     await expect(page.getByRole("heading", { name: "Speed mix" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "How games end" })).toBeVisible();
     await expect(page.getByRole("img", { name: /games per month for each speed/ })).toBeVisible();
-    await expect(page.getByRole("img", { name: /blitz players by rating in Sep 2026/ })).toBeVisible();
-    await expect(page.getByText(/1,234 more had no rating/)).toBeVisible();
+    await expect(page.getByRole("img", { name: /blitz player-games by rating in Sep 2026/ })).toBeVisible();
+    await expect(page.getByText(/2,000 more had no rating/)).toBeVisible(); // player-games (fixtures: 2000)
     await expect(page).toHaveTitle("Overview · Lichess lakehouse");
 
     await expectNoHorizontalScroll(page);
@@ -53,7 +53,7 @@ test.describe("overview", () => {
 
     await expect(page.getByRole("heading", { name: "Dec 2014" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Players per month, by speed" })).toBeVisible();
-    await expect(page.getByRole("img", { name: /bullet players by rating in Jun 2014/ })).toBeVisible();
+    await expect(page.getByRole("img", { name: /bullet player-games by rating in Jun 2014/ })).toBeVisible();
 
     await page.getByRole("radio", { name: "Games" }).click();
     await expect(page.getByRole("heading", { name: "Games per month, by speed" })).toBeVisible();

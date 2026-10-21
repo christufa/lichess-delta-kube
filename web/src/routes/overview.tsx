@@ -412,7 +412,7 @@ function RatingCard({
       ) : hist && hist.buckets.length > 0 ? (
         <EChart
           option={option}
-          label={`Bar chart: ${SPEED_LABELS[speed].toLowerCase()} players by rating in ${formatMonth(month)}`}
+          label={`Bar chart: ${SPEED_LABELS[speed].toLowerCase()} player-games by rating in ${formatMonth(month)}`}
         />
       ) : (
         <p className="text-muted-foreground py-12 text-center text-sm">
