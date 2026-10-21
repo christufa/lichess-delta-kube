@@ -5,8 +5,10 @@
 #   route in infra/gitops/edge.tf (after the /api/ route).
 # - Image lichess-web from the cluster's ACR, built and signed by images.yml. New builds
 #   roll out without kubectl: after each signed main build, images.yml commits its digest
-#   to the deploy-state branch (chess-web.yaml), read here as a second source, so a new
-#   build is a manifest change Argo CD syncs (deploy/README.md, "Rolling out new builds").
+#   to the deploy-state branch (chess-web.yaml). The git generator below reads that file and
+#   puts the digest into the Helm values, so a new build is a manifest change Argo CD syncs
+#   (deploy/README.md, "Rolling out new builds"). Not a second source: Argo CD can't mix two
+#   revisions (main, deploy-state) of one repository in an Application.
 # ApplicationSet so the registry comes from the cluster facts.
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
@@ -17,10 +19,22 @@ spec:
   goTemplate: true
   goTemplateOptions: ["missingkey=error"]
   generators:
-    - clusters:
-        selector:
-          matchLabels:
-            lichess.generops.dev/facts: "true"
+    - matrix:
+        generators:
+          - clusters:
+              selector:
+                matchLabels:
+                  lichess.generops.dev/facts: "true"
+          - git: # image.digest + image.commit of the newest signed main build (images.yml)
+              repoURL: https://github.com/christufa/lichess-delta-kube.git
+              revision: deploy-state
+              files:
+                - path: chess-web.yaml
+  # If the file ever went missing, the generator would yield nothing: keep the Application
+  # (and its workloads) rather than deleting them.
+  syncPolicy:
+    applicationsSync: create-update
+    preserveResourcesOnDeletion: true
   template:
     metadata:
       name: chess-web
@@ -28,19 +42,16 @@ spec:
         argocd.argoproj.io/sync-wave: "3" # with chess-api
     spec:
       project: lichess
-      sources:
-        - repoURL: https://github.com/christufa/lichess-delta-kube.git
-          targetRevision: main
-          path: deploy/charts/chess-web
-          helm:
-            valueFiles:
-              - $state/chess-web.yaml # image.digest + image.commit, written by images.yml
-            ignoreMissingValueFiles: true # no file yet: the chart falls back to :main
-            valuesObject:
-              acrLoginServer: '{{ index .metadata.annotations "lichess.generops.dev/acr-login-server" }}'
-        - repoURL: https://github.com/christufa/lichess-delta-kube.git
-          targetRevision: deploy-state # only images.yml pushes here; main stays PR-only
-          ref: state
+      source:
+        repoURL: https://github.com/christufa/lichess-delta-kube.git
+        targetRevision: main
+        path: deploy/charts/chess-web
+        helm:
+          valuesObject:
+            acrLoginServer: '{{ index .metadata.annotations "lichess.generops.dev/acr-login-server" }}'
+            image:
+              digest: '{{ .image.digest }}'
+              commit: '{{ .image.commit }}'
       destination:
         server: '{{ .server }}'
         namespace: chess-web

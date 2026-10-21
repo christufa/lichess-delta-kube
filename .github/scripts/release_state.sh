@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Record this main build's long-running service images on the deploy-state branch, one
 # Helm values file per app (image.digest + image.commit). deploy/apps/chess-{api,web}.yaml
-# read them as a second source, so a new signed build is a manifest change Argo CD syncs.
+# read them with a git files generator, so a new signed build is a manifest change Argo CD syncs.
 # Called by images.yml (job release) from a full-history checkout of main.
 #
 #   env: CHESS_API, CHESS_WEB  sha256:… digest that build pushed and signed; empty when
