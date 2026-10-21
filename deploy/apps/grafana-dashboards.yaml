@@ -1,0 +1,28 @@
+# Grafana dashboards as code (#31): deploy/grafana-dashboards (kustomize → ConfigMap
+# grafana-dashboards-lichess in monitoring), mounted by the grafana Application as the
+# "Lichess" folder. Separate from the grafana ApplicationSet, whose source is the Helm chart.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: grafana-dashboards
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: lichess
+  source:
+    repoURL: https://github.com/christufa/lichess-delta-kube.git
+    targetRevision: main
+    path: deploy/grafana-dashboards
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    retry:
+      limit: 5
+      backoff: { duration: 30s, factor: 2, maxDuration: 5m }

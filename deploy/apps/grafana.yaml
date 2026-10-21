@@ -105,6 +105,15 @@ spec:
                     disableDeletion: true
                     editable: false
                     options: { path: /var/lib/grafana/dashboards/platform }
+                  - name: lichess # ours, from git: deploy/grafana-dashboards (#31)
+                    folder: Lichess
+                    type: file
+                    disableDeletion: true
+                    editable: false
+                    updateIntervalSeconds: 30
+                    options: { path: /var/lib/grafana/dashboards/lichess }
+            dashboardsConfigMaps:
+              lichess: grafana-dashboards-lichess # Application grafana-dashboards
             dashboards:
               kubernetes:
                 k8s-global:
