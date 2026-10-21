@@ -40,9 +40,24 @@ def _get(url: str, headers: dict | None = None):
     return urllib.request.urlopen(req, timeout=TIMEOUT_S)
 
 
-def _get_text(url: str) -> str:
-    with _get(url) as resp:
-        return resp.read().decode("utf-8", errors="replace")
+RETRY_STATUS = (429, 502, 503, 504)
+
+
+def _get_text(url: str, attempts: int = 6, backoff_s: float = 10.0) -> str:
+    # Many pods starting at once (a backfill of small months) each fetch the inventory, and
+    # Lichess answers some of them 429: wait (Retry-After if given) and try again.
+    for attempt in range(attempts):
+        try:
+            with _get(url) as resp:
+                return resp.read().decode("utf-8", errors="replace")
+        except urllib.error.HTTPError as exc:
+            if exc.code not in RETRY_STATUS or attempt == attempts - 1:
+                raise
+            retry_after = exc.headers.get("Retry-After") if exc.headers else None
+            wait = float(retry_after) if retry_after and retry_after.isdigit() else backoff_s * 2 ** attempt
+            log(f"{url}: HTTP {exc.code}, retrying in {wait:.0f} s", "WARN")
+            time.sleep(wait)
+    raise AssertionError("unreachable")
 
 
 def month_of(filename: str) -> str:

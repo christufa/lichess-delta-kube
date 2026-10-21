@@ -51,6 +51,26 @@ def test_inventory_and_month_selection(lichess):
         select_months(entries, "2020-01")
 
 
+def test_inventory_retries_rate_limits(lichess, monkeypatch):
+    import urllib.error
+
+    from lichess_ingest import source
+
+    lichess.add_month("2013-01", 50)
+    real, calls = source._get, []
+
+    def flaky(url, headers=None):
+        calls.append(url)
+        if len(calls) <= 2:
+            raise urllib.error.HTTPError(url, 429, "Too Many Requests", {"Retry-After": "1"}, None)
+        return real(url, headers)
+
+    monkeypatch.setattr(source, "_get", flaky)
+    monkeypatch.setattr(source.time, "sleep", lambda s: None)
+    assert [e.month for e in fetch_inventory(lichess.base_url)] == ["2013-01"]
+    assert len(calls) == 5  # list.txt twice rejected, then list, counts, sha256sums
+
+
 # --------------------------------------------------------------------------- end to end, local destination
 
 def test_ingests_months_with_manifests_and_lineage(lichess, tmp_path):
