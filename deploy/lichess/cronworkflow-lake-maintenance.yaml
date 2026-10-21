@@ -3,6 +3,10 @@
 # than 3 days. spark/jobs/maintain_tables.py; per-table settings in table properties
 # (lichess.maintenance.*, see spark/lichess_spark/maintenance.py).
 #
+# Then the catalog's disaster recovery (spark/jobs/catalog_recovery.py): the inventory of every
+# table (name → location) is rewritten, and the drill reads each table from its files alone and
+# compares it with the catalog. A failed drill fails the run, which emails (WorkflowFailed).
+#
 # Holds both build locks, so it never rewrites a table while a build publishes into it.
 # Run it now: deploy/examples/run-maintain-tables.yaml.
 apiVersion: argoproj.io/v1alpha1
@@ -34,5 +38,25 @@ spec:
                 parameters:
                   - { name: job, value: maintain_tables }
                   - { name: args, value: "[]" }
+                  - { name: executors, value: "2" }
+                  - { name: image-tag, value: main }
+          - - name: catalog-inventory
+              templateRef:
+                name: spark-job
+                template: spark
+              arguments:
+                parameters:
+                  - { name: job, value: catalog_recovery }
+                  - { name: args, value: '["snapshot"]' }
+                  - { name: executors, value: "1" }
+                  - { name: image-tag, value: main }
+          - - name: catalog-drill
+              templateRef:
+                name: spark-job
+                template: spark
+              arguments:
+                parameters:
+                  - { name: job, value: catalog_recovery }
+                  - { name: args, value: '["drill"]' }
                   - { name: executors, value: "2" }
                   - { name: image-tag, value: main }
