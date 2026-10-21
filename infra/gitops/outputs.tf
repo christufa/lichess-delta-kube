@@ -25,3 +25,8 @@ output "mcp_client_secret" {
   value       = azuread_application_password.mcp.value
   sensitive   = true
 }
+
+output "chat_client_id" {
+  description = "Client ID of the chat's Entra app (the dashboard signs in to it)"
+  value       = azuread_application.chat.client_id
+}

@@ -56,3 +56,17 @@ def test_kubernetes_service_variables_dont_break_settings(monkeypatch):
     monkeypatch.setenv("CHESS_MCP_PORT", "tcp://10.0.0.1:80")
     monkeypatch.setenv("CHESS_MCP_SERVICE_PORT", "80")
     assert Settings().http_port == 8000
+
+
+def test_app_only_token_with_role_gets_the_scope(verifier, make_token, settings):
+    # The chat backend signs in as itself (client credentials): no scp, idtyp app, the role.
+    t = verify(verifier, make_token(scp=None, idtyp="app", app_displayname="id-chat", preferred_username=None))
+    assert settings.scope in t.scopes and user_of(t)["user"] == "id-chat"
+
+
+def test_app_only_token_without_role_has_no_scope(verifier, make_token, settings):
+    assert settings.scope not in verify(verifier, make_token(scp=None, roles=(), idtyp="app")).scopes
+
+
+def test_user_token_without_scp_is_not_treated_as_app(verifier, make_token, settings):
+    assert settings.scope not in verify(verifier, make_token(scp=None)).scopes  # no idtyp=app

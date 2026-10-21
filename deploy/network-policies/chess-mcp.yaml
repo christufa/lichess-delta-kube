@@ -2,7 +2,7 @@
 #
 # Allowed in:
 #   - cloudflared → :8000 (https://chess-mcp.<domain>/mcp, infra/gitops/edge.tf)
-#   - chess-api → :8000 (the chat backend calls the MCP server in-cluster, #69)
+#   - chess-chat → :8000 (the chat backend calls the MCP server in-cluster, #69)
 #   - kubelet probes: Cilium always allows the local node (host) to reach its pods
 # Allowed out:
 #   - Trino coordinator :8443
@@ -40,8 +40,8 @@ spec:
             k8s:io.kubernetes.pod.namespace: cloudflared
             app.kubernetes.io/name: cloudflared
         - matchLabels:
-            k8s:io.kubernetes.pod.namespace: chess-api
-            app.kubernetes.io/name: chess-api
+            k8s:io.kubernetes.pod.namespace: chess-chat
+            app.kubernetes.io/name: chess-chat
       toPorts:
         - ports:
             - { port: "8000", protocol: TCP }

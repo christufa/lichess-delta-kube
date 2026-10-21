@@ -1,0 +1,31 @@
+# Filled in by the `chess-chat` ApplicationSet from the in-cluster Argo CD cluster secret.
+# Empty values fail rendering on purpose.
+acrLoginServer: ""
+identityClientId: "" # managed identity id-<project>-chat (workload identity)
+entra:
+  tenantId: ""
+  chatClientId: "" # the "chess Chat" app: who may chat (infra/gitops/chat.tf)
+  mcpClientId: "" # the "chess MCP" app: the token the backend gets for the MCP server
+
+image:
+  repository: lichess-chat # lichess-*: Kyverno checks its cosign signature (charts/platform)
+  tag: main # used only while no digest is set
+  # Set by CI, not here: images.yml records every signed main build (digest + commit) on
+  # the deploy-state branch, which the ApplicationSet reads (deploy/README.md).
+  digest: ""
+  commit: ""
+
+mcpUrl: http://chess-mcp.chess-mcp.svc.cluster.local/mcp
+
+# The model, as Pydantic AI's provider:model; its price must be in chess_chat/pricing.py.
+model: anthropic:claude-opus-5-5
+effort: medium
+dailyCapUsd: "5"     # US dollars of model spend per UTC day, everyone together
+userDailyCapUsd: "5" # per user
+
+# Extra environment, e.g. CHESS_CHAT_CHATS_PER_MINUTE or CHESS_CHAT_MAX_REQUESTS_PER_RUN.
+env: []
+
+resources:
+  requests: { cpu: 50m, memory: 192Mi }
+  limits: { memory: 512Mi }

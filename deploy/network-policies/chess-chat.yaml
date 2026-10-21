@@ -1,0 +1,71 @@
+# chess-chat: default-deny in both directions.
+#
+# Allowed in:
+#   - cloudflared → :8000 (https://chess.<domain>/api/v1/chat, infra/gitops/edge.tf)
+#   - kubelet probes: Cilium always allows the local node (host) to reach its pods
+# Allowed out:
+#   - chess-mcp :8000: its only way to the data
+#   - kube-dns :53
+#   - HTTPS (:443) to the internet: the model provider's API and Entra ID (token exchange). By
+#     port, not name: AKS's Cilium doesn't filter by name without the paid networking add-on.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: default-deny
+  namespace: chess-chat
+spec:
+  endpointSelector: {}
+  ingress:
+    - fromEndpoints:
+        - {} # any pod in this namespace
+  egress:
+    - toEndpoints:
+        - {} # any pod in this namespace
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-cloudflared
+  namespace: chess-chat
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: chess-chat
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: cloudflared
+            app.kubernetes.io/name: cloudflared
+      toPorts:
+        - ports:
+            - { port: "8000", protocol: TCP }
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-mcp-dns-https
+  namespace: chess-chat
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: chess-chat
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: chess-mcp
+            app.kubernetes.io/name: chess-mcp
+      toPorts:
+        - ports:
+            - { port: "8000", protocol: TCP }
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - { port: "53", protocol: UDP }
+            - { port: "53", protocol: TCP }
+    - toEntities: [world]
+      toPorts:
+        - ports:
+            - { port: "443", protocol: TCP }
