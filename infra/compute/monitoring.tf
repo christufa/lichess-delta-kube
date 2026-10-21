@@ -93,10 +93,11 @@ resource "azurerm_monitor_action_group" "owner" {
   short_name          = "lichess"
   tags                = local.tags
 
-  # Renamed from "owner" (2026-10-21): no alert email had ever arrived and Azure's test API called
-  # that receiver invalid. A new receiver name makes Azure drop the old one and subscribe the
-  # address afresh (its "unsubscribe" state belongs to the old receiver). Alerts come from
-  # azure-noreply@microsoft.com, azureemail-noreply@microsoft.com and
+  # Azure only emails a receiver whose address has been verified (a code it emails once; until
+  # then the action group "runs" but sends nothing, and its test API says "There are no valid
+  # receivers"). The first address never got the verification mail, so var.alert_email is a
+  # +alias of the same mailbox, verified on 2026-10-21. Changing the address means verifying
+  # again. Alerts come from azure-noreply@microsoft.com, azureemail-noreply@microsoft.com and
   # alerts-noreply@mail.windowsazure.com; allow all three in the mailbox.
   email_receiver {
     name                    = "owner-email"
