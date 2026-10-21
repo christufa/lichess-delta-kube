@@ -49,6 +49,9 @@ spec:
               limits: { memory: 512Mi }
             persistence:
               enabled: false # stateless: dashboards and datasources are provisioned
+            # Infinity (Grafana Labs, signed): JSON from chess-api's internal cost endpoint (#31).
+            plugins:
+              - yesoreyeram-infinity-datasource@4.1.1
             grafana.ini:
               server:
                 root_url: '{{ index .metadata.annotations "lichess.generops.dev/grafana-url" }}'
@@ -89,6 +92,14 @@ spec:
                       azureCredentials:
                         authType: workloadidentity
                       azureEndpointResourceId: https://prometheus.monitor.azure.com
+                  # chess-api's /internal/v1/costs (daily Azure cost from lake.ops.azure_cost): reachable
+                  # only in the cluster, and only from Grafana (deploy/network-policies/chess-api.yaml).
+                  - name: Lichess API (internal)
+                    uid: lichess-api
+                    type: yesoreyeram-infinity-datasource
+                    access: proxy
+                    jsonData:
+                      allowedHosts: ["http://chess-api.chess-api.svc.cluster.local"]
             dashboardProviders:
               dashboardproviders.yaml:
                 apiVersion: 1

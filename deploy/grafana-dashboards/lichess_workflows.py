@@ -1,4 +1,4 @@
-"""Generates lichess-workflows.json, the Grafana dashboard for Argo Workflows (#31).
+"""Generates lichess-workflows.json, the Grafana dashboard for Argo Workflows and Azure cost (#31).
 
   python deploy/grafana-dashboards/lichess_workflows.py   # then commit the JSON
 
@@ -144,13 +144,70 @@ add({"type": "timeseries", "title": "Workflow pods, by phase",
      "fieldConfig": {"defaults": {"unit": "none", "decimals": 0, "min": 0,
                                   "custom": {"drawStyle": "line", "fillOpacity": 20, "stacking": {"mode": "normal"}}},
                      "overrides": [color("running", "blue"), color("pending", "orange")]}}, 24, 7, 0)
+y += 7
+
+row("Cost")
+API = {"type": "yesoreyeram-infinity-datasource", "uid": "lichess-api"}
+COSTS_URL = "http://chess-api.chess-api.svc.cluster.local/internal/v1/costs"
+
+
+def costs(months, ref="A"):
+    """Daily Azure cost by service from chess-api (lake.ops.azure_cost), as rows of date, service, cost."""
+    return {"datasource": API, "refId": ref, "type": "json", "source": "url", "parser": "backend",
+            "format": "table", "url": f"{COSTS_URL}?months={months}",
+            "url_options": {"method": "GET", "data": ""}, "root_selector": "rows",
+            "columns": [{"selector": "date", "text": "Date", "type": "timestamp"},
+                        {"selector": "service", "text": "Service", "type": "string"},
+                        {"selector": "cost", "text": "Cost", "type": "number"}]}
+
+
+def cost_stat(title, months, desc, x):
+    add({"type": "stat", "title": title, "description": desc, "targets": [costs(months)],
+         "options": {"reduceOptions": {"calcs": ["sum"], "fields": "/^Cost$/", "values": False},
+                     "colorMode": "none", "graphMode": "none", "textMode": "value"},
+         "fieldConfig": {"defaults": {"unit": "currencyUSD", "decimals": 2, "noValue": "no data yet"},
+                         "overrides": []}}, 4, 8, x)
+    panels[-1]["datasource"] = API
+
+
+cost_stat("Cost this month", 1, "Azure cost of the project's resource groups so far this month "
+          "(Cost Management, updated daily; the latest day is often incomplete).", 0)
+cost_stat("Cost, last 3 months", 3, "This month and the two before it.", 4)
+add({"type": "timeseries", "title": "Daily cost, by service", "interval": "1d",
+     "description": "Daily Azure cost by service over the last 3 months, from lake.ops.azure_cost "
+                    "(loaded daily by the lichess-monthly workflow).",
+     "targets": [costs(3)],
+     "transformations": [{"id": "prepareTimeSeries", "options": {"format": "multi"}}],
+     "options": {"legend": {"displayMode": "table", "placement": "right", "calcs": ["sum"]},
+                 "tooltip": {"mode": "multi", "sort": "desc"}},
+     "fieldConfig": {"defaults": {"unit": "currencyUSD", "decimals": 2, "min": 0,
+                                  "displayName": "${__field.labels.Service}",
+                                  "custom": {"drawStyle": "bars", "fillOpacity": 80, "lineWidth": 1,
+                                             "stacking": {"mode": "normal"}}},
+                     "overrides": []}}, 16, 8, 8)
+panels[-1]["datasource"] = API
+y += 8
+add({"type": "table", "title": "Cost by service (last 3 months)",
+     "description": "Total per Azure service over the last 3 months.",
+     "targets": [costs(3)],
+     "transformations": [
+         {"id": "groupBy", "options": {"fields": {
+             "Service": {"aggregations": [], "operation": "groupby"},
+             "Cost": {"aggregations": ["sum"], "operation": "aggregate"}}}},
+         {"id": "organize", "options": {"renameByName": {"Cost (sum)": "Cost"}}},
+         {"id": "sortBy", "options": {"sort": [{"field": "Cost", "desc": True}]}},
+     ],
+     "fieldConfig": {"defaults": {"unit": "currencyUSD", "decimals": 2}, "overrides": []},
+     "options": {"showHeader": True}}, 24, 8, 0)
+panels[-1]["datasource"] = API
+y += 8
 
 dash = {
     "uid": "lichess-workflows",
     "title": "Lichess workflows",
     "tags": ["lichess", "argo-workflows"],
-    "description": "Argo Workflows runs, outcomes and run time per WorkflowTemplate (#31). "
-                   "Individual runs are in the Argo Workflows UI (link at the top).",
+    "description": "Argo Workflows runs, outcomes and run time per WorkflowTemplate, and the project's "
+                   "daily Azure cost (#31). Individual runs are in the Argo Workflows UI (link at the top).",
     "timezone": "utc",
     "editable": False,
     "graphTooltip": 1,

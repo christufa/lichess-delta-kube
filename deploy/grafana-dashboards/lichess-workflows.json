@@ -5,7 +5,7 @@
     "lichess",
     "argo-workflows"
   ],
-  "description": "Argo Workflows runs, outcomes and run time per WorkflowTemplate (#31). Individual runs are in the Argo Workflows UI (link at the top).",
+  "description": "Argo Workflows runs, outcomes and run time per WorkflowTemplate, and the project's daily Azure cost (#31). Individual runs are in the Argo Workflows UI (link at the top).",
   "timezone": "utc",
   "editable": false,
   "graphTooltip": 1,
@@ -921,6 +921,354 @@
         "h": 7
       },
       "id": 15
+    },
+    {
+      "type": "row",
+      "title": "Cost",
+      "collapsed": false,
+      "id": 16,
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Cost this month",
+      "description": "Azure cost of the project's resource groups so far this month (Cost Management, updated daily; the latest day is often incomplete).",
+      "targets": [
+        {
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "lichess-api"
+          },
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "http://chess-api.chess-api.svc.cluster.local/internal/v1/costs?months=1",
+          "url_options": {
+            "method": "GET",
+            "data": ""
+          },
+          "root_selector": "rows",
+          "columns": [
+            {
+              "selector": "date",
+              "text": "Date",
+              "type": "timestamp"
+            },
+            {
+              "selector": "service",
+              "text": "Service",
+              "type": "string"
+            },
+            {
+              "selector": "cost",
+              "text": "Cost",
+              "type": "number"
+            }
+          ]
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ],
+          "fields": "/^Cost$/",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 2,
+          "noValue": "no data yet"
+        },
+        "overrides": []
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "lichess-api"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 33,
+        "w": 4,
+        "h": 8
+      },
+      "id": 17
+    },
+    {
+      "type": "stat",
+      "title": "Cost, last 3 months",
+      "description": "This month and the two before it.",
+      "targets": [
+        {
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "lichess-api"
+          },
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "http://chess-api.chess-api.svc.cluster.local/internal/v1/costs?months=3",
+          "url_options": {
+            "method": "GET",
+            "data": ""
+          },
+          "root_selector": "rows",
+          "columns": [
+            {
+              "selector": "date",
+              "text": "Date",
+              "type": "timestamp"
+            },
+            {
+              "selector": "service",
+              "text": "Service",
+              "type": "string"
+            },
+            {
+              "selector": "cost",
+              "text": "Cost",
+              "type": "number"
+            }
+          ]
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ],
+          "fields": "/^Cost$/",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 2,
+          "noValue": "no data yet"
+        },
+        "overrides": []
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "lichess-api"
+      },
+      "gridPos": {
+        "x": 4,
+        "y": 33,
+        "w": 4,
+        "h": 8
+      },
+      "id": 18
+    },
+    {
+      "type": "timeseries",
+      "title": "Daily cost, by service",
+      "interval": "1d",
+      "description": "Daily Azure cost by service over the last 3 months, from lake.ops.azure_cost (loaded daily by the lichess-monthly workflow).",
+      "targets": [
+        {
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "lichess-api"
+          },
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "http://chess-api.chess-api.svc.cluster.local/internal/v1/costs?months=3",
+          "url_options": {
+            "method": "GET",
+            "data": ""
+          },
+          "root_selector": "rows",
+          "columns": [
+            {
+              "selector": "date",
+              "text": "Date",
+              "type": "timestamp"
+            },
+            {
+              "selector": "service",
+              "text": "Service",
+              "type": "string"
+            },
+            {
+              "selector": "cost",
+              "text": "Cost",
+              "type": "number"
+            }
+          ]
+        }
+      ],
+      "transformations": [
+        {
+          "id": "prepareTimeSeries",
+          "options": {
+            "format": "multi"
+          }
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "sum"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 2,
+          "min": 0,
+          "displayName": "${__field.labels.Service}",
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "lichess-api"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 33,
+        "w": 16,
+        "h": 8
+      },
+      "id": 19
+    },
+    {
+      "type": "table",
+      "title": "Cost by service (last 3 months)",
+      "description": "Total per Azure service over the last 3 months.",
+      "targets": [
+        {
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "lichess-api"
+          },
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "http://chess-api.chess-api.svc.cluster.local/internal/v1/costs?months=3",
+          "url_options": {
+            "method": "GET",
+            "data": ""
+          },
+          "root_selector": "rows",
+          "columns": [
+            {
+              "selector": "date",
+              "text": "Date",
+              "type": "timestamp"
+            },
+            {
+              "selector": "service",
+              "text": "Service",
+              "type": "string"
+            },
+            {
+              "selector": "cost",
+              "text": "Cost",
+              "type": "number"
+            }
+          ]
+        }
+      ],
+      "transformations": [
+        {
+          "id": "groupBy",
+          "options": {
+            "fields": {
+              "Service": {
+                "aggregations": [],
+                "operation": "groupby"
+              },
+              "Cost": {
+                "aggregations": [
+                  "sum"
+                ],
+                "operation": "aggregate"
+              }
+            }
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "renameByName": {
+              "Cost (sum)": "Cost"
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "sort": [
+              {
+                "field": "Cost",
+                "desc": true
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "lichess-api"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 41,
+        "w": 24,
+        "h": 8
+      },
+      "id": 20
     }
   ]
 }

@@ -4,6 +4,7 @@
 #
 # Allowed in:
 #   - cloudflared → :8000 (the chess.generops.dev/api route, #45)
+#   - Grafana → :8000 (/internal/v1/costs for the workflows dashboard, #31)
 #   - kubelet probes: Cilium always allows the local node (host) to reach its pods
 # Allowed out:
 #   - Trino coordinator :8443
@@ -37,6 +38,24 @@ spec:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: cloudflared
             app.kubernetes.io/name: cloudflared
+      toPorts:
+        - ports:
+            - { port: "8000", protocol: TCP }
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-grafana
+  namespace: chess-api
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: chess-api
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: monitoring
+            app.kubernetes.io/name: grafana
       toPorts:
         - ports:
             - { port: "8000", protocol: TCP }

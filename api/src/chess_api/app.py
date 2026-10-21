@@ -1,10 +1,12 @@
-"""The FastAPI app: public dashboard endpoints under /api/v1, probes at /healthz and /readyz.
+"""The FastAPI app: public dashboard endpoints under /api/v1, probes at /healthz and /readyz,
+and one internal endpoint for Grafana under /internal/v1.
 
 cloudflared forwards https://chess.generops.dev/api/* with the path unchanged, so routes
-carry the /api prefix; the probes stay outside it and are never routed publicly.
+carry the /api prefix; the probes and /internal stay outside it and are never routed publicly.
 """
 from __future__ import annotations
 
+import datetime as dt
 import logging
 import threading
 import time
@@ -21,6 +23,7 @@ from . import queries
 from .caching import RateLimiter, ResponseCache
 from .models import (
     MONTH_PATTERN,
+    Costs,
     Health,
     Months,
     Openings,
@@ -137,6 +140,20 @@ def create_app(settings: Settings | None = None, db: QueryRunner | None = None) 
         return respond(
             request, key, lambda: queries.openings(db, from_month, to_month, speed, rating_band, limit)
         )
+
+    # ---------------------------------------------------------------- internal (Grafana)
+
+    @app.get("/internal/v1/costs", response_model=Costs, include_in_schema=False)
+    def get_costs(request: Request, months: Annotated[int, Query(ge=1, le=24)] = 3) -> Response:
+        """Daily Azure cost by service for the last `months` months (this one included), for the
+        Grafana dashboard. Not public: cloudflared only routes /api/, the network policy only lets
+        Grafana in, and a request that came through Cloudflare anyway is answered 404."""
+        if settings.client_ip_header in request.headers:
+            raise HTTPException(404, "Not Found")
+        today = dt.datetime.now(dt.UTC).date()
+        y, m = divmod(today.year * 12 + today.month - 1 - (months - 1), 12)
+        from_month = f"{y:04d}-{m + 1:02d}"
+        return respond(request, f"costs:{from_month}", lambda: queries.costs(db, from_month))
 
     # ---------------------------------------------------------------- probes
 

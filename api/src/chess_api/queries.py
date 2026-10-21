@@ -1,4 +1,5 @@
-"""SQL over lake.gold only (chess-api can't read anything else). Each game is counted once
+"""SQL over lake.gold, plus lake.ops.azure_cost for the internal cost endpoint (chess-api can't
+read anything else: deploy/apps/trino.yaml). Each game is counted once
 in gold, so sums across months, speeds and bands are game counts; distinct players are not
 summed (they don't add up), which is why those come per month and speed as stored.
 
@@ -7,6 +8,8 @@ Values always go in as parameters; the SQL text is built from constants only.
 from __future__ import annotations
 
 from .models import (
+    CostRow,
+    Costs,
     Months,
     Opening,
     Openings,
@@ -22,6 +25,7 @@ from .trino_client import QueryRunner
 SUMMARY = "lake.gold.monthly_summary"
 OPENINGS = "lake.gold.openings"
 RATINGS = "lake.gold.rating_distribution"
+COSTS = "lake.ops.azure_cost"
 
 
 def months(db: QueryRunner) -> Months:
@@ -97,4 +101,25 @@ def openings(
         rating_band=rating_band,
         total_games=total,
         openings=[Opening(**{k: v for k, v in r.items() if k != "total_games"}) for r in rows],
+    )
+
+
+def costs(db: QueryRunner, from_month: str) -> Costs:
+    """Daily cost by service from `from_month` on (filtered on the month string, so the SQL is the
+    same in Trino and the tests' SQLite)."""
+    rows = db.query(
+        f"""
+        SELECT usage_date, service_name, SUM(cost) AS cost, MAX(currency) AS currency
+        FROM {COSTS}
+        WHERE month >= ?
+        GROUP BY usage_date, service_name
+        ORDER BY usage_date, service_name""",
+        [from_month],
+    )
+    currencies = {r["currency"] for r in rows if r["currency"]}
+    return Costs(
+        from_month=from_month,
+        currency=currencies.pop() if len(currencies) == 1 else None,
+        rows=[CostRow(date=str(r["usage_date"]), service=r["service_name"], cost=round(r["cost"] or 0.0, 4))
+              for r in rows],
     )

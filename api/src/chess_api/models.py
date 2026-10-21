@@ -96,3 +96,17 @@ class Problem(BaseModel):
 
 class Health(BaseModel):
     status: str
+
+
+class CostRow(BaseModel):
+    date: str = Field(description="Usage date, YYYY-MM-DD")
+    service: str | None = Field(description="Azure service name")
+    cost: float
+
+
+class Costs(BaseModel):
+    """Daily Azure cost of the project, by service (internal: Grafana only, never routed publicly)."""
+
+    from_month: str
+    currency: str | None
+    rows: list[CostRow]
