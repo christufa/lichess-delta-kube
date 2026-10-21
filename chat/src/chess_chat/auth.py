@@ -87,6 +87,10 @@ class WorkloadIdentityAuth(httpx2.Auth):
     """Bearer token for the MCP app, from the pod's workload identity (client credentials with a
     federated assertion; no SDK, no secret). Cached until five minutes before it expires."""
 
+    # httpx reads the token response for us, in the sync or the async client. Reading it here
+    # (response.read()) fails under the async client the MCP toolset uses.
+    requires_response_body = True
+
     def __init__(self, scope: str, env: Mapping[str, str] | None = None):
         self.scope = scope
         self.env = os.environ if env is None else env
@@ -98,7 +102,6 @@ class WorkloadIdentityAuth(httpx2.Auth):
     def auth_flow(self, request: httpx2.Request) -> Generator[httpx2.Request, httpx2.Response]:
         if time.monotonic() > self._expires:
             response = yield self._fetch()
-            response.read()
             response.raise_for_status()
             body = response.json()
             self._token = body["access_token"]

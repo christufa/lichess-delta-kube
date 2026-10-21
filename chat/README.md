@@ -56,17 +56,20 @@ minute, `413` conversation too long, `503` not configured (Claude sign-in not se
       - Issuer URL: `issuer_url`
       - Rule match: audience = `audience`, claim `oid` = `oid`, claim `tid` = `tid`
       - Scope `workspace:developer`. Keep the default token lifetime (600 s).
-   3. Note the service account ID (`svac_...`), the rule ID (`fdrl_...`) and your organization ID (Settings → Organization). Note the workspace ID only if the rule covers several workspaces.
+      - Enable the rule in one workspace (a dedicated `chess-chat` workspace can have its own spend limit), not all.
+   3. Edit the issuer (**Issuers** tab) and set its max JWT lifetime to **25 hours**. The wizard sets about 2 hours, but managed identity tokens from Entra last 24 hours plus 5 minutes, and anything longer than the limit is refused.
+   4. Note the service account ID (`svac_...`), the rule ID (`fdrl_...`), your organization ID (Settings → Organization) and the workspace ID (`wrkspc_...`, Settings → Workspaces). The workspace ID is needed even when the rule covers only one workspace; without it the exchange fails with `workspace_id_required`.
 3. Put those IDs in `infra/gitops/terraform.tfvars` (gitignored; see `terraform.tfvars.example`) and apply `infra/gitops` again:
    ```hcl
    anthropic_federation = {
      organization_id    = "<org uuid>"
      service_account_id = "svac_..."
      federation_rule_id = "fdrl_..."
+     workspace_id       = "wrkspc_..."
    }
    ```
    Argo CD restarts the chat with the new values.
-4. Check it: `/api/v1/chat/status` says `available: true`. The Console's **Authentication history** tab lists every exchange, including the reason a rejected one failed.
+4. Check it: `/api/v1/chat/status` says `available: true`. The caller only ever gets `401 Authentication failed`; the Console's **Authentication history** tab lists every exchange with the reason a rejected one failed (`status.reason`).
 5. Give someone access: add their sign-in name to `mcp_extra_users` and apply `infra/gitops`.
 
 To run it locally, set `ANTHROPIC_API_KEY` in your shell instead. Federation is used only when `CHESS_CHAT_ANTHROPIC_FEDERATION_RULE_ID` is set.

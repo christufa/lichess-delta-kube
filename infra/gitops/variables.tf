@@ -97,10 +97,10 @@ variable "mcp_extra_users" {
 variable "anthropic_federation" {
   description = "The chat's Claude sign-in (Anthropic Workload Identity Federation): IDs from the Claude Console's Connect workload wizard (chat/README.md). Empty: the chat stays off"
   type = object({
-    organization_id    = string               # your Anthropic organization's UUID
-    service_account_id = string               # svac_...
-    federation_rule_id = string               # fdrl_...
-    workspace_id       = optional(string, "") # wrkspc_..., only if the rule covers several workspaces
+    organization_id    = string # your Anthropic organization's UUID
+    service_account_id = string # svac_...
+    federation_rule_id = string # fdrl_...
+    workspace_id       = string # wrkspc_..., the rule's workspace (required, even for one)
   })
-  default = { organization_id = "", service_account_id = "", federation_rule_id = "" }
+  default = { organization_id = "", service_account_id = "", federation_rule_id = "", workspace_id = "" }
 }
