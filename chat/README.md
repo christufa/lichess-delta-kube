@@ -17,7 +17,7 @@ It streams answers to the browser in the [Vercel AI SDK](https://ai-sdk.dev) UI 
 | `GET /healthz` | liveness; not routed publicly |
 
 Errors: `401` sign in, `403` not assigned, `429` daily budget used up or more than 6 questions a
-minute, `413` conversation too long, `503` not configured (no model API key yet).
+minute, `413` conversation too long, `503` not configured (Claude sign-in not set up yet).
 
 ## How it works
 
@@ -26,6 +26,10 @@ minute, `413` conversation too long, `503` not configured (no model API key yet)
   - Adaptive thinking with summarized reasoning, so the panel can show how it got there, at effort `medium`.
   - Cached instructions and tool definitions.
   - Anthropic's server-side fallback (`fallbacks: "default"`): if a safety classifier declines, the API retries on a suitable model.
+- **Claude sign-in, no API key:** Anthropic [Workload Identity Federation](https://platform.claude.com/docs/en/manage-claude/workload-identity-federation).
+  - The pod gets an Entra token for the "Claude API audience" app (`infra/gitops/chat.tf`) as its managed identity.
+  - Anthropic checks it against a federation rule (this tenant's issuer, that audience, the identity's object ID) and returns a short-lived token for an Anthropic service account. The SDK refreshes it.
+  - Only the chat identity is assigned to the audience app, so no other identity in the tenant can get a token for it.
 - **Tools:** the MCP server's (`list_tables`, `describe_table`, `run_sql`, `get_game`) and nothing else.
   - The backend signs in to it as its own managed identity (workload identity, client credentials, no secret), which holds the MCP app's role `Lakehouse.Query`.
   - The MCP server's read-only guard and Trino's rules apply to everything the model runs.
@@ -37,13 +41,35 @@ minute, `413` conversation too long, `503` not configured (no model API key yet)
 
 ## Setup (owner)
 
-1. Apply `infra/compute` (the chat's managed identity), then `infra/gitops` (the "chess Chat" app, the MCP role for the identity, the facts, the `/api/v1/chat` route).
-2. Put the model API key in Key Vault, from a terminal you're signed in on:
-   ```powershell
-   az keyvault secret set --vault-name "$(terraform -chdir=infra/compute output -raw key_vault_name)" --name anthropic-api-key --value "<your Anthropic API key>"
+1. Apply `infra/compute` (the chat's managed identity), then `infra/gitops`:
+   - the "chess Chat" app
+   - the MCP role for the identity
+   - the "Claude API audience" app and its role for the identity
+   - the facts
+   - the `/api/v1/chat` route
+2. Connect the chat to Claude in the [Claude Console](https://platform.claude.com/settings/workload-identity-federation). You need the admin or owner role in your Anthropic organization.
+   1. Print what the wizard asks for:
+      ```powershell
+      terraform -chdir=infra/gitops output claude_federation
+      ```
+   2. Under **Settings → Workload identity → Connect workload**, choose **Microsoft Entra** and set **Token issuer** to **v2.0 (login.microsoftonline.com)**.
+      - Issuer URL: `issuer_url`
+      - Rule match: audience = `audience`, claim `oid` = `oid`, claim `tid` = `tid`
+      - Scope `workspace:developer`. Keep the default token lifetime (600 s).
+   3. Note the service account ID (`svac_...`), the rule ID (`fdrl_...`) and your organization ID (Settings → Organization). Note the workspace ID only if the rule covers several workspaces.
+3. Put those IDs in `infra/gitops/terraform.tfvars` (gitignored; see `terraform.tfvars.example`) and apply `infra/gitops` again:
+   ```hcl
+   anthropic_federation = {
+     organization_id    = "<org uuid>"
+     service_account_id = "svac_..."
+     federation_rule_id = "fdrl_..."
+   }
    ```
-   External Secrets copies it into the cluster within the hour. To pick it up immediately, restart: `kubectl rollout restart deploy/chess-chat -n chess-chat`.
-3. Give someone access: add their sign-in name to `mcp_extra_users` and apply `infra/gitops`.
+   Argo CD restarts the chat with the new values.
+4. Check it: `/api/v1/chat/status` says `available: true`. The Console's **Authentication history** tab lists every exchange, including the reason a rejected one failed.
+5. Give someone access: add their sign-in name to `mcp_extra_users` and apply `infra/gitops`.
+
+To run it locally, set `ANTHROPIC_API_KEY` in your shell instead. Federation is used only when `CHESS_CHAT_ANTHROPIC_FEDERATION_RULE_ID` is set.
 
 ## Run and test
 

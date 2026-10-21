@@ -4,7 +4,7 @@
 
 resource "kubernetes_namespace_v1" "lichess" {
   metadata {
-    name   = local.compute.jobs_namespace
+    name = local.compute.jobs_namespace
     labels = {
       "app.kubernetes.io/part-of" = "lichess"
       # Pod Security Admission (#62): only pods meeting "restricted" may run here.

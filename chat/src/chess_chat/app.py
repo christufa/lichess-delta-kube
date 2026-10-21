@@ -62,7 +62,7 @@ def create_app(settings: Settings | None = None, *, ledger: Ledger | None = None
     if agent is None:
         try:
             agent = build_agent(settings, ledger)
-        except Exception as e:  # noqa: BLE001  e.g. no model API key yet: run, but say why chat is off
+        except Exception as e:  # noqa: BLE001  e.g. no model credential yet: run, but say why chat is off
             unavailable = f"{type(e).__name__}: {e}"
             log.error("chat disabled", extra={"reason": unavailable})
 

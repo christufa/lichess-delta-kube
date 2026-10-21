@@ -19,7 +19,7 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: chess-chat
-        azure.workload.identity/use: "true" # projected token + AZURE_* variables for the MCP sign-in
+        azure.workload.identity/use: "true" # projected token + AZURE_* variables: MCP and Claude sign-in
       {{- with .Values.image.commit }}
       annotations:
         lichess.generops.dev/commit: {{ . | quote }} # the main commit the image was built from
@@ -60,9 +60,13 @@ spec:
             - { name: CHESS_CHAT_DAILY_CAP_USD, value: {{ .Values.dailyCapUsd | quote }} }
             - { name: CHESS_CHAT_USER_DAILY_CAP_USD, value: {{ .Values.userDailyCapUsd | quote }} }
             - { name: CHESS_CHAT_LEDGER_PATH, value: /data/spend.sqlite3 }
-            - name: ANTHROPIC_API_KEY # from Key Vault; without it the chat runs but says it's not configured
-              valueFrom:
-                secretKeyRef: { name: chess-chat-model-key, key: anthropic-api-key, optional: true }
+            # Claude by Workload Identity Federation, no API key. Until the rule is set the chat
+            # runs but says it isn't configured.
+            - { name: CHESS_CHAT_CLAUDE_AUDIENCE_CLIENT_ID, value: {{ .Values.anthropic.audienceClientId | quote }} }
+            - { name: CHESS_CHAT_ANTHROPIC_ORGANIZATION_ID, value: {{ .Values.anthropic.organizationId | quote }} }
+            - { name: CHESS_CHAT_ANTHROPIC_SERVICE_ACCOUNT_ID, value: {{ .Values.anthropic.serviceAccountId | quote }} }
+            - { name: CHESS_CHAT_ANTHROPIC_FEDERATION_RULE_ID, value: {{ .Values.anthropic.federationRuleId | quote }} }
+            - { name: CHESS_CHAT_ANTHROPIC_WORKSPACE_ID, value: {{ .Values.anthropic.workspaceId | quote }} }
             {{- with .Values.env }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -102,23 +106,3 @@ spec:
   resources:
     requests:
       storage: 1Gi
----
-# The model provider's API key, from Key Vault secret `anthropic-api-key` (set it yourself:
-# az keyvault secret set --vault-name <vault> --name anthropic-api-key --value <key>).
-apiVersion: external-secrets.io/v1
-kind: ExternalSecret
-metadata:
-  name: chess-chat-model-key
-  labels:
-    app.kubernetes.io/name: chess-chat
-spec:
-  refreshInterval: 1h
-  secretStoreRef:
-    kind: ClusterSecretStore
-    name: azure-key-vault
-  target:
-    name: chess-chat-model-key
-  data:
-    - secretKey: anthropic-api-key
-      remoteRef:
-        key: anthropic-api-key
