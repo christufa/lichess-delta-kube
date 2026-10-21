@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: chess-mcp
+  labels:
+    app.kubernetes.io/name: chess-mcp
+spec:
+  selector:
+    app.kubernetes.io/name: chess-mcp
+  ports:
+    - { name: http, port: 80, targetPort: http }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: chess-mcp
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: chess-mcp

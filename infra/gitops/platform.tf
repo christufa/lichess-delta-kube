@@ -23,6 +23,7 @@ locals {
     "aks-oidc-issuer"      = data.azurerm_kubernetes_cluster.main.oidc_issuer_url
     "prometheus-url"       = local.compute.prometheus_query_endpoint
     "grafana-url"          = "https://${local.private_hosts.grafana.hostname}"
+    "mcp-client-id"        = azuread_application.mcp.client_id # the MCP server's Entra app (#68)
   }
 }
 

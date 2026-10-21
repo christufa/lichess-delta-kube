@@ -1,0 +1,47 @@
+[project]
+name = "chess-mcp"
+version = "0.1.0"
+description = "MCP server over the lakehouse (curated and gold tables), for MCP clients and the dashboard chat"
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+# Exact pins: uv.lock pins the whole tree, Renovate proposes the bumps.
+dependencies = [
+    "cachetools==7.2.4",
+    "mcp==2.3.0",
+    "pydantic==2.14.1",
+    "pydantic-settings==2.16.1",
+    "pyjwt[crypto]==2.15.1",
+    "sqlglot==30.24.0",
+    "trino==0.340.0",
+    "uvicorn==0.54.0",
+]
+
+[project.scripts]
+chess-mcp = "chess_mcp:main"
+
+[build-system]
+requires = ["uv_build>=0.13.1,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "httpx2==2.15.1",
+    "pytest==9.1.1",
+    "ruff==0.17.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-p no:cacheprovider"
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S"]
+ignore = ["S101"] # assert is how pytest checks
+
+[tool.ruff.lint.per-file-ignores]
+"src/chess_mcp/catalog.py" = ["S608", "E501"] # identifiers validated against the catalog; long lines are example SQL in docs
+"tests/*" = ["S105", "S106"] # fake tokens

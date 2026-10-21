@@ -1,0 +1,32 @@
+# Filled in by the `chess-mcp` ApplicationSet from the in-cluster Argo CD cluster secret.
+# Empty values fail rendering on purpose.
+acrLoginServer: ""
+entra:
+  tenantId: ""
+  clientId: "" # the "chess MCP" app registration (infra/gitops/mcp.tf)
+
+# Where MCP clients connect (the protected resource); the endpoint is <publicUrl>/mcp.
+publicUrl: https://chess-mcp.generops.dev
+
+image:
+  repository: lichess-mcp # lichess-*: Kyverno checks its cosign signature (charts/platform)
+  tag: main # used only while no digest is set
+  # Set by CI, not here: images.yml records every signed main build (digest + commit) on
+  # the deploy-state branch, which the ApplicationSet reads as a values file (deploy/README.md).
+  digest: ""
+  commit: ""
+
+replicas: 2
+
+trino:
+  host: trino.trino.svc.cluster.local
+  port: 8443
+  user: chess-mcp # = the service account name; Trino's rules let it read lake.curated and lake.gold
+
+# Extra environment, e.g. CHESS_MCP_QUERIES_PER_MINUTE, CHESS_MCP_MAX_ROWS or
+# CHESS_MCP_QUERY_TIMEOUT_SECONDS overrides.
+env: []
+
+resources:
+  requests: { cpu: 50m, memory: 128Mi }
+  limits: { memory: 384Mi }

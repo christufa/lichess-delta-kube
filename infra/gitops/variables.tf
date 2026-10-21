@@ -87,3 +87,9 @@ variable "argocd_admin_enabled" {
   default     = true
 }
 
+
+variable "mcp_extra_users" {
+  description = "Entra sign-in names (UPNs) besides you who may use the MCP server and the chat (app role Lakehouse.Query, #68)"
+  type        = list(string)
+  default     = []
+}

@@ -1,8 +1,8 @@
 # Default-deny ingress for trino. Allowed in:
 #   - pods in trino (coordinator ↔ workers)
 #   - lichess → coordinator :8443 (notebooks, smoke workflow)
-#   - chess-api → coordinator :8443 (the data API; Trino lets it read lake.gold only);
-#     chess-mcp gets the same rule when it arrives
+#   - chess-api → coordinator :8443 (the data API; Trino lets it read lake.gold only)
+#   - chess-mcp → coordinator :8443 (the MCP server; lake.curated and lake.gold, read-only)
 #   - kube-system → metrics (Azure Managed Prometheus), later
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
@@ -32,6 +32,9 @@ spec:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: chess-api
             app.kubernetes.io/name: chess-api
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: chess-mcp
+            app.kubernetes.io/name: chess-mcp
       toPorts:
         - ports:
             - { port: "8443", protocol: TCP }

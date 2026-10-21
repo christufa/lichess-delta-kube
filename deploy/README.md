@@ -29,6 +29,7 @@ deploy/
     network-policies.yaml       default-deny ingress everywhere (deploy/network-policies), wave 2
     chess-api.yaml              the data API (ApplicationSet → charts/chess-api, registry from facts), wave 3
     chess-web.yaml              the public dashboard (ApplicationSet → charts/chess-web, registry from facts), wave 3
+    chess-mcp.yaml              the MCP server (ApplicationSet → charts/chess-mcp, registry + Entra app from facts), wave 3
   cloudflared/                cloudflared Deployment (routes and Access live in infra/gitops/edge.tf)
   lakekeeper/                 CloudNativePG clusters for the catalog and OpenFGA, generated encryption key
   charts/platform/            ClusterSecretStore, image signature policy (values from cluster facts)
@@ -118,7 +119,7 @@ the pod was created, and Argo CD sees no manifest change when `:main` moves. So:
 
 1. `images.yml` builds, tests, scans, pushes and signs `lichess-api` / `lichess-web` on main.
 2. Its `release` job commits each new digest to the **`deploy-state`** branch, one Helm
-   values file per app (`chess-api.yaml`, `chess-web.yaml`: `image.digest`, `image.commit`).
+   values file per app (`chess-api.yaml`, `chess-web.yaml`, `chess-mcp.yaml`: `image.digest`, `image.commit`).
    An image whose build failed keeps its last good entry; a re-run of an older workflow
    can't move an entry back to an older commit.
 3. The `chess-api` / `chess-web` ApplicationSets read `<app>.yaml` from `deploy-state` with
