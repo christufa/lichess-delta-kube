@@ -94,7 +94,7 @@ variable "eso_service_account" {
 }
 
 variable "alert_email" {
-  description = "Where monitoring alerts are emailed (kept in terraform.tfvars, not in git)"
+  description = "Where monitoring alerts are emailed (kept in terraform.tfvars, not in git). Azure emails a verification code to a new address; nothing is sent until it is verified"
   type        = string
 }
 
