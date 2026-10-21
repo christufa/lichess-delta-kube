@@ -7,6 +7,12 @@ export function formatMonth(month: string): string {
   return name && year ? `${name} ${year}` : month;
 }
 
+/** "2015-12" → "2016-01" */
+export function nextMonth(month: string): string {
+  const [y = 0, m = 0] = month.split("-").map(Number);
+  return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, "0")}`;
+}
+
 const integer = new Intl.NumberFormat("en-US");
 const compact = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 });
 

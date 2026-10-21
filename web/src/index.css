@@ -1,5 +1,8 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+/* Self-hosted variable fonts (OFL-1.1), bundled by Vite: the CSP allows fonts from 'self' only. */
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
 
 /* Dark mode follows the OS setting; there is no toggle. */
 @custom-variant dark (@media (prefers-color-scheme: dark));
@@ -7,25 +10,34 @@
 /* shadcn/ui tokens (neutral), plus the chart palette. The categorical slots are the
    dataviz reference palette in a fixed order: one slot per speed, never cycled. */
 :root {
-  --radius: 0.625rem;
-  --background: oklch(0.985 0.002 90);
-  --foreground: oklch(0.145 0 0);
+  --radius: 0.875rem;
+  --background: oklch(0.982 0.005 275);
+  --foreground: oklch(0.17 0.02 275);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: oklch(0.17 0.02 275);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.45 0 0);
-  --accent: oklch(0.95 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.17 0.02 275);
+  --primary: oklch(0.47 0.21 278);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.96 0.008 275);
+  --secondary-foreground: oklch(0.22 0.02 275);
+  --muted: oklch(0.96 0.008 275);
+  --muted-foreground: oklch(0.46 0.02 275);
+  --accent: oklch(0.94 0.02 278);
+  --accent-foreground: oklch(0.22 0.02 275);
   --destructive: oklch(0.55 0.22 27);
-  --border: oklch(0.91 0 0);
-  --input: oklch(0.85 0 0);
-  --ring: oklch(0.55 0 0);
+  --border: oklch(0.9 0.01 275);
+  --input: oklch(0.84 0.012 275);
+  --ring: oklch(0.55 0.18 278);
+
+  /* Brand: the hero aurora, gradient text and highlights (decoration, never data). */
+  --brand-1: #6d4aff;
+  --brand-2: #2a78d6;
+  --brand-3: #0f9b6e;
+  --glow-1: color-mix(in oklch, var(--brand-1) 14%, transparent);
+  --glow-2: color-mix(in oklch, var(--brand-3) 10%, transparent);
+  --spotlight: #6d4aff;
+  --grid-line: oklch(0.17 0.02 275 / 5%);
 
   --series-1: #2a78d6;
   --series-2: #eb6834;
@@ -37,30 +49,38 @@
   --result-draw: #a3a19a;
   --result-black: #2b2a28;
   --result-unfinished: #d8d6cf;
-  --chart-text: #52514e;
-  --chart-grid: #e5e4df;
+  --chart-text: #4b4d61;
+  --chart-grid: #e7e8f0;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: oklch(0.16 0 0);
-    --foreground: oklch(0.96 0 0);
-    --card: oklch(0.205 0 0);
-    --card-foreground: oklch(0.96 0 0);
-    --popover: oklch(0.205 0 0);
-    --popover-foreground: oklch(0.96 0 0);
-    --primary: oklch(0.92 0 0);
-    --primary-foreground: oklch(0.205 0 0);
-    --secondary: oklch(0.27 0 0);
-    --secondary-foreground: oklch(0.96 0 0);
-    --muted: oklch(0.27 0 0);
-    --muted-foreground: oklch(0.74 0 0);
-    --accent: oklch(0.3 0 0);
-    --accent-foreground: oklch(0.96 0 0);
+    --background: oklch(0.13 0.014 275);
+    --foreground: oklch(0.97 0.004 275);
+    --card: oklch(0.175 0.016 275);
+    --card-foreground: oklch(0.97 0.004 275);
+    --popover: oklch(0.2 0.018 275);
+    --popover-foreground: oklch(0.97 0.004 275);
+    --primary: oklch(0.78 0.13 280);
+    --primary-foreground: oklch(0.16 0.02 275);
+    --secondary: oklch(0.24 0.018 275);
+    --secondary-foreground: oklch(0.97 0.004 275);
+    --muted: oklch(0.24 0.018 275);
+    --muted-foreground: oklch(0.76 0.015 275);
+    --accent: oklch(0.27 0.03 278);
+    --accent-foreground: oklch(0.97 0.004 275);
     --destructive: oklch(0.7 0.19 22);
-    --border: oklch(1 0 0 / 12%);
-    --input: oklch(1 0 0 / 20%);
-    --ring: oklch(0.6 0 0);
+    --border: oklch(1 0 0 / 10%);
+    --input: oklch(1 0 0 / 18%);
+    --ring: oklch(0.7 0.14 280);
+
+    --brand-1: #8b6cff;
+    --brand-2: #3d9bff;
+    --brand-3: #2bd4a0;
+    --glow-1: color-mix(in oklch, var(--brand-1) 22%, transparent);
+    --glow-2: color-mix(in oklch, var(--brand-3) 12%, transparent);
+    --spotlight: #ffffff;
+    --grid-line: oklch(1 0 0 / 4%);
 
     --series-1: #3987e5;
     --series-2: #d95926;
@@ -72,12 +92,17 @@
     --result-draw: #8c8a83;
     --result-black: #0b0b0b;
     --result-unfinished: #4a4945;
-    --chart-text: #c3c2b7;
-    --chart-grid: #3a3936;
+    --chart-text: #b8bbcf;
+    --chart-grid: #2b2d3f;
   }
 }
 
 @theme inline {
+  --font-sans: "Geist Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --color-brand-1: var(--brand-1);
+  --color-brand-2: var(--brand-2);
+  --color-brand-3: var(--brand-3);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -107,7 +132,124 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground antialiased;
-    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    @apply bg-background text-foreground font-sans antialiased;
+    font-feature-settings: "ss01", "cv11";
+    /* Two soft glows behind everything; fixed, so they don't scroll away. */
+    background-image:
+      radial-gradient(60rem 36rem at 12% -8%, var(--glow-1), transparent 70%),
+      radial-gradient(48rem 30rem at 96% 4%, var(--glow-2), transparent 70%);
+    background-attachment: fixed;
+  }
+  ::selection {
+    background: color-mix(in oklch, var(--brand-1) 35%, transparent);
+  }
+}
+
+/* A faint chessboard-scale grid behind the page, fading out toward the bottom. */
+.bg-grid {
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 30%, transparent 75%);
+}
+
+/* Gradient text (headings, the hero numbers). */
+.text-gradient {
+  background: linear-gradient(100deg, var(--brand-1), var(--brand-2) 45%, var(--brand-3));
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+}
+
+/* Glass surfaces (header, filter bar). */
+.glass {
+  background: color-mix(in oklch, var(--card) 72%, transparent);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+}
+
+/* Entrances: content rises into place, staggered with --delay. */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+    filter: blur(4px);
+  }
+}
+.animate-rise {
+  animation: rise 0.6s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  animation-delay: var(--delay, 0ms);
+}
+/* Table rows only fade (transforms on <tr> render badly). */
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+.animate-fade {
+  animation: fade 0.5s ease-out backwards;
+  animation-delay: var(--delay, 0ms);
+}
+/* Bars grow from the left. */
+@keyframes grow-x {
+  from {
+    transform: scaleX(0);
+  }
+}
+.animate-grow-x {
+  transform-origin: left;
+  animation: grow-x 0.9s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  animation-delay: var(--delay, 0ms);
+}
+
+/* Sparklines draw themselves in. */
+.sparkline-draw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: draw 1.6s cubic-bezier(0.65, 0, 0.35, 1) 0.2s forwards;
+}
+@keyframes draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Page changes cross-fade (View Transitions API, from the nav links). */
+::view-transition-old(root) {
+  animation: 0.18s ease-in both vt-out;
+}
+::view-transition-new(root) {
+  animation: 0.32s cubic-bezier(0.22, 1, 0.36, 1) both vt-in;
+}
+@keyframes vt-out {
+  to {
+    opacity: 0;
+    filter: blur(6px);
+  }
+}
+@keyframes vt-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+    filter: blur(6px);
+  }
+}
+
+/* Reduced motion: no entrances, transitions or view transitions (JS effects check it too). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
   }
 }

@@ -1,16 +1,11 @@
 import { useEffect } from "react";
-import { formatMonth } from "./format";
+import { formatMonth, nextMonth } from "./format";
 
 /** Sets the tab title for a page. */
 export function usePageTitle(title: string) {
   useEffect(() => {
     document.title = `${title} · Lichess lakehouse`;
   }, [title]);
-}
-
-function nextMonth(month: string): string {
-  const [y = 0, m = 0] = month.split("-").map(Number);
-  return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, "0")}`;
 }
 
 /** The contiguous runs of months with data: "Jan 2013 – Dec 2015, Aug 2026 – Sep 2026". */

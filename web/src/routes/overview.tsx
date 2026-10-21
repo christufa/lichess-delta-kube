@@ -1,6 +1,7 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { getRouteApi } from "@tanstack/react-router";
-import { useMemo } from "react";
+import { Bot, Gauge, Swords, TrendingDown, TrendingUp, Users, type LucideIcon } from "lucide-react";
+import { useMemo, type CSSProperties, type ReactNode } from "react";
 import type { Speed, SummaryRow } from "@/api/generated";
 import {
   getMonthsOptions,
@@ -8,7 +9,6 @@ import {
   getSummaryOptions,
 } from "@/api/generated/@tanstack/react-query.gen";
 import { EChart } from "@/components/chart";
-import { baseOption, useChartColors, type ChartColors, type ChartOption } from "@/lib/chart-theme";
 import {
   ChartCard,
   DataTable,
@@ -17,11 +17,26 @@ import {
   QueryError,
   SelectField,
   Swatch,
+  Toolbar,
 } from "@/components/common";
+import { Hero } from "@/components/hero";
+import CountUp from "@/components/reactbits/count-up";
+import SpotlightCard from "@/components/reactbits/spotlight-card";
 import { ResultsBar, ResultsLegend } from "@/components/results-bar";
+import { Sparkline } from "@/components/sparkline";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
+  baseOption,
+  fade,
+  useChartColors,
+  verticalGradient,
+  type ChartColors,
+  type ChartOption,
+} from "@/lib/chart-theme";
+import {
+  allSpeedsSeries,
   medianBucket,
+  monthGaps,
   monthKpis,
   ratingHistogram,
   resultsBySpeed,
@@ -33,6 +48,7 @@ import { formatCompact, formatInt, formatMonth, formatPercent, monthOptions } fr
 import { usePageTitle } from "@/lib/page";
 import { resolveMonth, resolveRange, type Metric } from "@/lib/search";
 import { SPEED_LABELS, SPEEDS } from "@/lib/speeds";
+import { cn } from "@/lib/utils";
 
 const route = getRouteApi("/");
 
@@ -41,21 +57,26 @@ export function OverviewPage() {
   const months = useQuery(getMonthsOptions());
   return (
     <div className="space-y-6">
-      <div className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Lichess, month by month</h1>
-        <p className="text-muted-foreground text-sm">
-          Every rated standard game in the Lichess open database: how many were played, by whom, at what
-          speed, and how they ended.
-        </p>
-      </div>
       {months.isPending ? (
-        <LoadingBlock className="h-64" label="Loading months" />
+        <>
+          <h1 className="sr-only">Lichess, month by month</h1>
+          <LoadingBlock className="h-96" label="Loading months" />
+        </>
       ) : months.isError ? (
-        <QueryError error={months.error} onRetry={() => void months.refetch()} />
+        <>
+          <h1 className="text-3xl font-semibold tracking-tight">Lichess, month by month</h1>
+          <QueryError error={months.error} onRetry={() => void months.refetch()} />
+        </>
       ) : months.data.months.length === 0 ? (
-        <p>No months have been loaded yet.</p>
+        <>
+          <h1 className="text-3xl font-semibold tracking-tight">Lichess, month by month</h1>
+          <p>No months have been loaded yet.</p>
+        </>
       ) : (
-        <Overview months={months.data.months} />
+        <>
+          <Hero months={months.data.months} />
+          <Overview months={months.data.months} />
+        </>
       )}
     </div>
   );
@@ -79,18 +100,23 @@ function Overview({ months }: { months: string[] }) {
   const options = monthOptions(months);
   return (
     <>
-      <FilterBar label="Date range">
-        <SelectField label="From" value={from} options={options} onChange={(v) => {
-            set({ from: v });
-          }} />
-        <SelectField label="To" value={to} options={options} onChange={(v) => {
-            set({ to: v });
-          }} />
-      </FilterBar>
+      <Toolbar>
+        <FilterBar label="Date range">
+          <SelectField label="From" value={from} options={options} onChange={(v) => {
+              set({ from: v });
+            }} />
+          <SelectField label="To" value={to} options={options} onChange={(v) => {
+              set({ to: v });
+            }} />
+          <p className="text-muted-foreground col-span-2 self-center text-xs sm:ml-auto sm:max-w-xs sm:text-right">
+            The charts cover this range; the headline numbers are for its last month.
+          </p>
+        </FilterBar>
+      </Toolbar>
 
       {summary.isPending ? (
         <div className="grid gap-4 md:grid-cols-2">
-          <LoadingBlock className="h-24 md:col-span-2" label="Loading the summary" />
+          <LoadingBlock className="h-40 md:col-span-2" label="Loading the summary" />
           <LoadingBlock className="h-72" />
           <LoadingBlock className="h-72" />
         </div>
@@ -120,40 +146,100 @@ function Overview({ months }: { months: string[] }) {
   );
 }
 
+interface Tile {
+  label: string;
+  icon: LucideIcon;
+  /** The value, counted up to when it scrolls into view. */
+  value: ReactNode;
+  title?: string;
+  note?: ReactNode;
+  trend: number[];
+  color: string;
+}
+
 function Kpis({ rows, month }: { rows: SummaryRow[]; month: string }) {
   const k = monthKpis(rows, month);
   if (!k) return null;
+  const up = (k.gamesChange ?? 0) >= 0;
   const change =
-    k.gamesChange === null || k.previousMonth === null
-      ? undefined
-      : `${k.gamesChange >= 0 ? "+" : "−"}${formatPercent(Math.abs(k.gamesChange), 1)} vs ${formatMonth(k.previousMonth)}`;
-  const tiles = [
-    { label: "Games", value: formatCompact(k.games), title: formatInt(k.games), note: change },
-    { label: "Players", value: formatCompact(k.players), title: formatInt(k.players) },
+    k.gamesChange === null || k.previousMonth === null ? undefined : (
+      <span
+        className={cn(
+          "inline-flex items-center gap-1 font-medium",
+          up ? "text-emerald-700 dark:text-emerald-400" : "text-rose-700 dark:text-rose-400",
+        )}
+      >
+        {up ? <TrendingUp aria-hidden="true" className="size-3.5" /> : <TrendingDown aria-hidden="true" className="size-3.5" />}
+        {`${up ? "+" : "−"}${formatPercent(Math.abs(k.gamesChange), 1)} vs ${formatMonth(k.previousMonth)}`}
+      </span>
+    );
+  const tiles: Tile[] = [
+    {
+      label: "Games",
+      icon: Swords,
+      value: <CountUp to={k.games} format="compact" decimals={1} mode="roll" />,
+      title: formatInt(k.games),
+      note: change,
+      trend: allSpeedsSeries(rows, (r) => r.games),
+      color: "var(--brand-1)",
+    },
+    {
+      label: "Players",
+      icon: Users,
+      value: <CountUp to={k.players} format="compact" decimals={1} mode="roll" />,
+      title: formatInt(k.players),
+      note: "played at least one game",
+      trend: allSpeedsSeries(rows, (r) => r.players),
+      color: "var(--brand-2)",
+    },
     {
       label: "Average rating",
-      value: k.avgRating === null ? "–" : formatInt(Math.round(k.avgRating)),
+      icon: Gauge,
+      value: k.avgRating === null ? "–" : <CountUp to={Math.round(k.avgRating)} separator="," mode="roll" />,
       note: "mean of both players",
+      trend: allSpeedsSeries(rows, (r) => r.avg_rating),
+      color: "var(--brand-3)",
     },
-    { label: "Games with a bot", value: formatPercent(k.botShare, 1) },
+    {
+      label: "Games with a bot",
+      icon: Bot,
+      value: <CountUp to={k.botShare * 100} decimals={1} suffix="%" mode="roll" />,
+      note: "a bot on either side",
+      trend: allSpeedsSeries(rows, (r) => (r.games > 0 ? r.bot_games / r.games : 0)),
+      color: "var(--series-4)",
+    },
   ];
   return (
     <section aria-labelledby="kpi-heading" className="md:col-span-2">
-      <h2 id="kpi-heading" className="text-muted-foreground mb-2 text-sm font-medium">
-        {formatMonth(month)}
-      </h2>
-      <dl className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {tiles.map((t) => (
-          // A <div> per term/description group, styled like a Card (a <dl> allows only that).
-          <div key={t.label} className="bg-card text-card-foreground rounded-xl border p-4 shadow-sm">
-            <dt className="text-muted-foreground text-xs font-medium">{t.label}</dt>
-            <dd className="text-2xl font-semibold tabular-nums" title={t.title}>
-              {t.value}
-            </dd>
-            {t.note && <dd className="text-muted-foreground text-xs">{t.note}</dd>}
-          </div>
+      <div className="mb-3 flex items-baseline gap-3">
+        <h2 id="kpi-heading" className="text-xl font-semibold tracking-tight">
+          {formatMonth(month)}
+        </h2>
+        <p className="text-muted-foreground text-sm">headline numbers, every speed</p>
+      </div>
+      <ul className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {tiles.map((t, i) => (
+          <li key={t.label} className="animate-rise" style={{ "--delay": `${i * 80}ms` } as CSSProperties}>
+            <SpotlightCard className="bg-card text-card-foreground flex h-full flex-col rounded-2xl border p-4 shadow-lg shadow-black/5">
+              <p className="text-muted-foreground flex items-center gap-2 text-xs font-medium">
+                <span
+                  aria-hidden="true"
+                  className="grid size-6 place-items-center rounded-md"
+                  style={{ backgroundColor: `color-mix(in oklch, ${t.color} 18%, transparent)`, color: t.color }}
+                >
+                  <t.icon className="size-3.5" />
+                </span>
+                {t.label}
+              </p>
+              <p className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl" title={t.title}>
+                {t.value}
+              </p>
+              {t.note && <p className="text-muted-foreground mt-0.5 text-xs">{t.note}</p>}
+              <Sparkline values={t.trend} color={t.color} className="mt-auto pt-3" />
+            </SpotlightCard>
+          </li>
         ))}
-      </dl>
+      </ul>
     </section>
   );
 }
@@ -163,7 +249,7 @@ function speedLegend(series: SpeedSeries["series"], colors: ChartColors) {
     <ul className="text-muted-foreground mb-2 flex flex-wrap gap-x-4 gap-y-1 text-xs" aria-label="Legend">
       {series.map((s) => (
         <li key={s.speed} className="flex items-center gap-1.5">
-          <Swatch color={colors.speed[s.speed]} />
+          <Swatch color={colors.speed[s.speed]} className="rounded-full" />
           {SPEED_LABELS[s.speed]}
         </li>
       ))}
@@ -176,20 +262,38 @@ function TrendCard({ rows, metric, onMetric }: { rows: SummaryRow[]; metric: Met
   const data = useMemo(() => seriesBySpeed(rows, metric), [rows, metric]);
   const option = useMemo<ChartOption>(() => {
     const base = baseOption(colors);
+    // Shade the gaps in the loaded months, so a jump across years doesn't read as a spike.
+    const gaps = monthGaps(data.months).map(([a, b]) => [
+      { xAxis: formatMonth(a), name: "No data loaded" },
+      { xAxis: formatMonth(b) },
+    ]);
     return {
       ...base,
       tooltip: { ...base.tooltip, trigger: "axis", valueFormatter: (v: unknown) => formatInt(Number(v)) },
-      xAxis: { ...base.xAxis, type: "category", data: data.months.map(formatMonth) },
+      xAxis: { ...base.xAxis, type: "category", boundaryGap: false, data: data.months.map(formatMonth) },
       yAxis: { ...base.yAxis, type: "value", axisLabel: { ...base.yAxis.axisLabel, formatter: (v: number) => formatCompact(v) } },
-      series: data.series.map((s) => ({
+      series: data.series.map((s, i) => ({
         name: SPEED_LABELS[s.speed],
         type: "line",
         data: s.values,
+        smooth: 0.25,
         showSymbol: data.months.length === 1,
         symbolSize: 8,
-        lineStyle: { width: 2 },
+        lineStyle: { width: 2.25 },
+        areaStyle: { color: verticalGradient(fade(colors.speed[s.speed], 0.22), fade(colors.speed[s.speed], 0)) },
         color: colors.speed[s.speed],
         emphasis: { focus: "series" },
+        animationDelay: i * 120,
+        ...(i === 0 && gaps.length > 0
+          ? {
+              markArea: {
+                silent: true,
+                itemStyle: { color: fade(colors.text, 0.08) },
+                label: { color: colors.text, fontSize: 11, position: "insideTop" },
+                data: gaps,
+              },
+            }
+          : {}),
       })),
     };
   }, [data, colors]);
@@ -198,11 +302,12 @@ function TrendCard({ rows, metric, onMetric }: { rows: SummaryRow[]; metric: Met
   return (
     <ChartCard
       className="md:col-span-2"
+      delay={120}
       title={`${noun} per month, by speed`}
       description={
         metric === "games"
-          ? "Each game counted once. Months without data are left out."
-          : "Distinct players who played at least one game at that speed. Months without data are left out."
+          ? "Each game counted once. Months without data are left out (shaded)."
+          : "Distinct players who played at least one game at that speed. Months without data are left out (shaded)."
       }
       action={
         <ToggleGroup
@@ -227,8 +332,9 @@ function TrendCard({ rows, metric, onMetric }: { rows: SummaryRow[]; metric: Met
         />
       }
     >
+      <span id="trends" className="absolute -top-40" aria-hidden="true" />
       {speedLegend(data.series, colors)}
-      <EChart option={option} label={`Line chart: ${noun.toLowerCase()} per month for each speed`} />
+      <EChart option={option} className="h-80" label={`Line chart: ${noun.toLowerCase()} per month for each speed`} />
     </ChartCard>
   );
 }
@@ -248,14 +354,16 @@ function SpeedMixCard({ rows }: { rows: SummaryRow[] }) {
       },
       xAxis: { ...base.xAxis, type: "category", data: data.months.map(formatMonth) },
       yAxis: { ...base.yAxis, type: "value", max: 100, axisLabel: { ...base.yAxis.axisLabel, formatter: "{value}%" } },
-      series: data.series.map((s) => ({
+      series: data.series.map((s, i) => ({
         name: SPEED_LABELS[s.speed],
         type: "bar",
         stack: "share",
-        barCategoryGap: "20%",
+        barCategoryGap: "24%",
         data: s.values.map((v) => Math.round(v * 1000) / 10),
         color: colors.speed[s.speed],
-        itemStyle: { borderColor: colors.surface, borderWidth: 1 },
+        itemStyle: { borderColor: colors.surface, borderWidth: 1, borderRadius: i === data.series.length - 1 ? [3, 3, 0, 0] : 0 },
+        emphasis: { focus: "series" },
+        animationDelay: (idx: number) => idx * 18 + i * 60,
       })),
     };
   }, [data, colors]);
@@ -263,6 +371,7 @@ function SpeedMixCard({ rows }: { rows: SummaryRow[] }) {
   return (
     <ChartCard
       title="Speed mix"
+      delay={200}
       description="Each speed's share of the month's games."
       table={
         <DataTable
@@ -284,6 +393,7 @@ function ResultsCard({ rows, from, to }: { rows: SummaryRow[]; from: string; to:
   return (
     <ChartCard
       title="How games end"
+      delay={280}
       description={`White wins, draws and black wins by speed, ${range}.`}
       table={
         <DataTable
@@ -302,13 +412,13 @@ function ResultsCard({ rows, from, to }: { rows: SummaryRow[]; from: string; to:
     >
       <ResultsLegend className="mb-3" />
       <ul className="space-y-3">
-        {data.map(({ speed, results: r }) => (
+        {data.map(({ speed, results: r }, i) => (
           <li key={speed} className="grid grid-cols-[7.5rem_1fr] items-start gap-3 text-sm">
             <span className={speed === "all" ? "font-semibold" : undefined}>
               {speed === "all" ? "All speeds" : SPEED_LABELS[speed]}
               <span className="text-muted-foreground block text-xs tabular-nums">{formatCompact(r.games)} games</span>
             </span>
-            <ResultsBar results={r} />
+            <ResultsBar results={r} delay={300 + i * 70} />
           </li>
         ))}
       </ul>
@@ -358,18 +468,30 @@ function RatingCard({
         {
           name: "Player-games",
           type: "bar",
-          barCategoryGap: "10%",
+          barCategoryGap: "12%",
           data: hist?.buckets.map((b) => b.playerGames) ?? [],
           color,
-          itemStyle: { borderRadius: [3, 3, 0, 0] },
+          itemStyle: { borderRadius: [4, 4, 0, 0], color: verticalGradient(color, fade(color, 0.35)) },
+          emphasis: { itemStyle: { color } },
+          animationDelay: (idx: number) => idx * 14,
+          ...(median !== null && {
+            markLine: {
+              silent: true,
+              symbol: "none",
+              lineStyle: { color: colors.text, type: [4, 4], width: 1 },
+              label: { formatter: "median", color: colors.text, fontSize: 11 },
+              data: [{ xAxis: String(median) }],
+            },
+          }),
         },
       ],
     };
-  }, [hist, speed, colors]);
+  }, [hist, speed, colors, median]);
 
   return (
     <ChartCard
       title="Rating distribution"
+      delay={120}
       description={
         hist && total > 0
           ? `Players' ratings in ${formatInt(Math.round(total / 2))} rated ${SPEED_LABELS[speed].toLowerCase()} games in ${formatMonth(month)}, in 50-point steps: each game counts once for each player, at their rating then. The median is ${median}–${(median ?? 0) + 49}.${hist.unratedPlayerGames > 0 ? ` ${formatInt(hist.unratedPlayerGames)} more had no rating.` : ""}`
@@ -406,12 +528,13 @@ function RatingCard({
       }
     >
       {dist.isPending ? (
-        <LoadingBlock className="h-72" label="Loading the rating distribution" />
+        <LoadingBlock className="h-80" label="Loading the rating distribution" />
       ) : dist.isError ? (
         <QueryError error={dist.error} onRetry={() => void dist.refetch()} />
       ) : hist && hist.buckets.length > 0 ? (
         <EChart
           option={option}
+          className="h-80"
           label={`Bar chart: ${SPEED_LABELS[speed].toLowerCase()} player-games by rating in ${formatMonth(month)}`}
         />
       ) : (

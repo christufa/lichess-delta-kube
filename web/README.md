@@ -4,21 +4,58 @@ The public dashboard (#67) at `https://chess.generops.dev/`: the Lichess game hi
 by month, from the read-only data API (`/api/v1`, [api/](../api/README.md)) on the same
 origin. No sign-in.
 
-- **Overview:** games and players per month by speed, the speed mix, how games end (white /
-  draw / black) by speed, the rating distribution for a month and speed, and the headline
-  numbers for the last month of the range.
+- **Overview:** a hero with the whole lake in three numbers (games, months loaded, White's
+  win rate), then games and players per month by speed (gaps in the loaded months shaded),
+  the speed mix, how games end (white / draw / black) by speed, the rating distribution for
+  a month and speed (median marked), and the headline numbers with sparklines for the last
+  month of the range.
 - **Openings:** the most played openings for a month range, speed and 200-point rating band,
-  with each one's results.
+  with each one's results, three highlights (most played, best for White, most drawish) and
+  a sort by games or by result share (the # stays the popularity rank).
 - Filters live in the URL (`/?from=2015-01&to=2015-12&metric=players`,
   `/openings?speed=blitz&band=1600`), so every view can be shared.
 
 The opening explorer (board) and the chat panel from #67 are not built yet.
 
+## Design
+
+Dark is the designed default; light follows the OS setting (no toggle). Colors are tokens
+in `src/index.css` (shadcn tokens, a brand gradient, the chart palette). The font is Geist
+and Geist Mono, self-hosted from `@fontsource-variable` (bundled by Vite, so the CSP's
+`font-src 'self'` holds). Motion:
+
+- The hero's aurora is WebGL (React Bits Aurora), in its own lazy chunk; it pauses off
+  screen and draws a single still frame with reduced motion.
+- The headline words blur in (BlurText), counters roll to their values when they scroll
+  into view (CountUp), cards light up under the pointer or keyboard focus (SpotlightCard),
+  the badge text shimmers (ShinyText).
+- Cards and rows rise in with staggered CSS animations, bars grow in, sparklines draw
+  themselves; ECharts animate on first sight (`src/components/echart.tsx` waits for the
+  chart to scroll into view); page changes from the nav cross-fade with the View
+  Transitions API.
+- `prefers-reduced-motion: reduce` switches all of it off: a global CSS rule for CSS
+  animations, transitions and view transitions, and each JS effect checks it (ECharts
+  gets `animation: false`). The e2e tests run axe once the animations have finished, and a
+  reduced-motion test checks that no CSS animation runs.
+
+The layout leaves room for the chat panel (#69): `Layout` puts the page in a column next
+to an empty slot for an `<aside>` drawer.
+
+### Third-party components and licenses
+
+| What | License | Where |
+|---|---|---|
+| [React Bits](https://reactbits.dev): Aurora, BlurText, CountUp, ShinyText, SpotlightCard | MIT + Commons Clause (use in a site is fine; selling or redistributing the components themselves is not) | copied into `src/components/reactbits` (adapted; notice in its `LICENSE.md`) |
+| [motion](https://motion.dev) 12 (BlurText, CountUp) | MIT | npm, pinned |
+| Geist / Geist Mono (`@fontsource-variable`) | SIL OFL 1.1 | npm, pinned, bundled |
+
+No runtime CDN: everything ships from the same origin.
+
 ## Stack
 
 React 19, TypeScript (strict), Vite, TanStack Router (code-based routes, one chunk per page)
 and TanStack Query, Tailwind CSS v4 with shadcn/ui components (`src/components/ui`, added
-with the shadcn CLI), ECharts (tree-shaken, SVG renderer). Charts take their colors from CSS
+with the shadcn CLI), ECharts (tree-shaken, SVG renderer, its own lazy chunk), motion. Charts take their colors from CSS
 variables in `src/index.css`, follow the OS light/dark setting, have an HTML legend, and
 show their numbers as a table behind "Show the numbers".
 

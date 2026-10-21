@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { Swatch } from "@/components/common";
 import { describeResults, type Results } from "@/lib/data";
 import { formatPercent } from "@/lib/format";
@@ -11,12 +12,24 @@ const PARTS = [
 ] as const;
 
 /** White / draw / black (/ unfinished) as one 100% bar, with the split as text. */
-export function ResultsBar({ results, className, showLabels = true }: { results: Results; className?: string; showLabels?: boolean }) {
+export function ResultsBar({
+  results,
+  className,
+  showLabels = true,
+  delay = 0,
+}: {
+  results: Results;
+  className?: string;
+  showLabels?: boolean;
+  /** When the bar starts growing in, in ms. */
+  delay?: number;
+}) {
   const { games } = results;
   return (
     <div className={cn("min-w-0", className)}>
       <div
-        className="ring-border flex h-3 w-full gap-[2px] overflow-hidden rounded-sm ring-1"
+        className="ring-border animate-grow-x flex h-3 w-full gap-[2px] overflow-hidden rounded-full ring-1"
+        style={{ "--delay": `${delay}ms` } as CSSProperties}
         role="img"
         aria-label={describeResults(results)}
       >

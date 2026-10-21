@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link, Outlet } from "@tanstack/react-router";
+import { Link, Outlet, useRouterState } from "@tanstack/react-router";
+import { useLayoutEffect, useRef } from "react";
 import { getMonthsOptions } from "@/api/generated/@tanstack/react-query.gen";
 import { coverage, usePageTitle } from "@/lib/page";
 
@@ -8,69 +9,123 @@ const NAV = [
   { to: "/openings", label: "Openings" },
 ] as const;
 
+/**
+ * The page shell: header, main and footer in a column, next to an (empty for now) slot on
+ * the right for the chat panel (#69), which will be an <aside> drawer of `--chat-width`.
+ */
 export function Layout() {
   const months = useQuery(getMonthsOptions());
   return (
-    <div className="flex min-h-dvh flex-col">
-      <a
-        href="#main"
-        className="bg-primary text-primary-foreground sr-only z-50 rounded-md px-3 py-2 focus:not-sr-only focus:absolute focus:top-2 focus:left-2"
-      >
-        Skip to content
-      </a>
-      <header className="bg-card border-b">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3">
-          <Link to="/" className="flex items-center gap-2 font-semibold tracking-tight">
-            <img src="/favicon.svg" alt="" width={24} height={24} />
-            Lichess lakehouse
-          </Link>
-          <nav aria-label="Main">
-            <ul className="flex gap-1">
-              {NAV.map((item) => (
-                <li key={item.to}>
-                  <Link
-                    to={item.to}
-                    activeOptions={{ exact: true, includeSearch: false }}
-                    className="text-muted-foreground hover:bg-accent hover:text-foreground aria-[current=page]:bg-accent aria-[current=page]:text-foreground rounded-md px-3 py-2 text-sm font-medium"
-                  >
-                    {item.label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </nav>
-        </div>
-      </header>
-      <main id="main" className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">
-        <Outlet />
-      </main>
-      <footer className="text-muted-foreground border-t text-xs">
-        <div className="mx-auto max-w-6xl space-y-1 px-4 py-4">
-          <p>
-            Games from the{" "}
-            <a className="underline underline-offset-2" href="https://database.lichess.org/">
-              Lichess open database
-            </a>{" "}
-            (CC0), loaded into an Iceberg lakehouse on Azure and queried through Trino.
-            {months.data && months.data.months.length > 0 && <> Months loaded: {coverage(months.data.months)}.</>}
-          </p>
-          <p>
-            Source:{" "}
-            <a className="underline underline-offset-2" href="https://github.com/christufa/lichess-delta-kube">
-              christufa/lichess-delta-kube
-            </a>
-            . Not affiliated with Lichess.
-          </p>
-        </div>
-      </footer>
+    <div className="relative flex min-h-dvh">
+      <div aria-hidden="true" className="bg-grid pointer-events-none absolute inset-x-0 top-0 -z-10 h-[48rem]" />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <a
+          href="#main"
+          className="bg-primary text-primary-foreground sr-only z-50 rounded-md px-3 py-2 focus:not-sr-only focus:absolute focus:top-2 focus:left-2"
+        >
+          Skip to content
+        </a>
+        <header className="glass sticky top-0 z-40 border-b">
+          <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3">
+            <Link to="/" viewTransition className="group flex items-center gap-2.5 font-semibold tracking-tight">
+              <span className="relative grid size-8 place-items-center">
+                <span
+                  aria-hidden="true"
+                  className="from-brand-1 via-brand-2 to-brand-3 absolute inset-0 rounded-lg bg-linear-135 opacity-60 blur-md transition-opacity group-hover:opacity-100"
+                />
+                <img src="/favicon.svg" alt="" width={28} height={28} className="relative rounded-md" />
+              </span>
+              <span>
+                Lichess <span className="text-muted-foreground font-normal">lakehouse</span>
+              </span>
+            </Link>
+            <MainNav />
+          </div>
+        </header>
+        <main id="main" className="mx-auto w-full max-w-6xl flex-1 px-4 pt-6 pb-16">
+          <Outlet />
+        </main>
+        <footer className="text-muted-foreground border-t text-xs">
+          <div className="mx-auto flex max-w-6xl flex-col gap-1 px-4 py-6">
+            <p>
+              Games from the{" "}
+              <a className="hover:text-foreground underline underline-offset-2" href="https://database.lichess.org/">
+                Lichess open database
+              </a>{" "}
+              (CC0), loaded into an Iceberg lakehouse on Azure and queried through Trino.
+              {months.data && months.data.months.length > 0 && <> Months loaded: {coverage(months.data.months)}.</>}
+            </p>
+            <p>
+              Source:{" "}
+              <a
+                className="hover:text-foreground underline underline-offset-2"
+                href="https://github.com/christufa/lichess-delta-kube"
+              >
+                christufa/lichess-delta-kube
+              </a>
+              . Not affiliated with Lichess.
+            </p>
+          </div>
+        </footer>
+      </div>
+      {/* The chat panel (#69) goes here: <aside className="w-(--chat-width) …" />. */}
     </div>
+  );
+}
+
+/** The page links, with a pill that slides to the current page. */
+function MainNav() {
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const list = useRef<HTMLUListElement>(null);
+  const pill = useRef<HTMLLIElement>(null);
+
+  useLayoutEffect(() => {
+    const measure = () => {
+      // The <li> around the current page's link (positioned within the <ul>).
+      const current = list.current?.querySelector<HTMLElement>("[aria-current=page]")?.parentElement;
+      const el = pill.current;
+      if (!el) return;
+      el.style.opacity = current ? "1" : "0";
+      if (current) {
+        el.style.width = `${current.offsetWidth}px`;
+        el.style.transform = `translateX(${current.offsetLeft - 4}px)`;
+      }
+    };
+    measure();
+    // Web fonts arriving change the widths.
+    void document.fonts.ready.then(measure);
+  }, [pathname]);
+
+  return (
+    <nav aria-label="Main">
+      <ul ref={list} className="bg-muted/60 relative flex gap-1 rounded-full border p-1">
+        <li
+          ref={pill}
+          aria-hidden="true"
+          className="bg-background absolute inset-y-1 left-1 rounded-full opacity-0 shadow-sm ring-1 ring-black/5 transition-[transform,width] duration-300 ease-out dark:bg-white/10 dark:ring-white/10"
+        />
+        {NAV.map((item) => (
+          <li key={item.to} className="relative">
+            <Link
+              to={item.to}
+              viewTransition
+              activeOptions={{ exact: true, includeSearch: false }}
+              className="text-muted-foreground hover:text-foreground aria-[current=page]:text-foreground block rounded-full px-4 py-1.5 text-sm font-medium transition-colors"
+            >
+              {item.label}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </nav>
   );
 }
 
 export function NotFound() {
   usePageTitle("Not found");
   return (
-    <div className="space-y-2">
+    <div className="animate-rise space-y-3 py-16 text-center">
+      <p className="text-gradient font-mono text-6xl font-semibold">404</p>
       <h1 className="text-2xl font-semibold">Page not found</h1>
       <p className="text-muted-foreground">
         <Link to="/" className="underline underline-offset-2">
