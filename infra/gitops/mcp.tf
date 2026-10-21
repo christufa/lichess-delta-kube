@@ -1,14 +1,14 @@
 # --- MCP server (#68): the Entra app MCP clients sign in to ---------------------------------
 # The MCP server (mcp-server/, https://chess-mcp.<domain>/mcp) is an OAuth resource server for
 # this app. A client (Claude, MCP Inspector, VS Code, the dashboard chat) signs the user in and
-# gets a token for scope api://<app>/Lakehouse.Query; the server accepts it only if the user is
-# also *assigned* app role Lakehouse.Query. Assignment is required to sign in at all, and only
+# gets a token for scope api://<app>/MCP.Access; the server accepts it only if the user is
+# also *assigned* app role Lakehouse.Query (Entra needs the two values to differ). Assignment is required to sign in at all, and only
 # the owner plus var.mcp_extra_users are assigned.
 #
 # Entra has no dynamic client registration, so clients use this app's client ID (and, for
 # Claude's web connector, the client secret below; see the output mcp_client_secret).
 locals {
-  mcp_scope_id = "212729bb-1f9c-43de-b42c-d6246baf3e63" # oauth2 permission scope Lakehouse.Query
+  mcp_scope_id = "212729bb-1f9c-43de-b42c-d6246baf3e63" # oauth2 permission scope MCP.Access
   mcp_role_id  = "6dc3f75a-c8c2-4051-87a4-e8afe875d10b" # app role Lakehouse.Query
   azure_cli    = "04b07795-8ddb-461a-bbee-02f9e1bf7b46" # Microsoft's well-known Azure CLI client
 }
@@ -22,7 +22,7 @@ resource "azuread_application" "mcp" {
     requested_access_token_version = 2 # v2 tokens: iss = login.microsoftonline.com/<tenant>/v2.0, aud = client ID
     oauth2_permission_scope {
       id                         = local.mcp_scope_id
-      value                      = "Lakehouse.Query"
+      value                      = "MCP.Access"
       type                       = "User"
       admin_consent_display_name = "Query the Lichess lakehouse"
       admin_consent_description  = "Run read-only queries on the Lichess lakehouse through its MCP server, as the signed-in user."
@@ -76,11 +76,11 @@ resource "azuread_service_principal" "mcp" {
 resource "azuread_service_principal_delegated_permission_grant" "mcp_self" {
   service_principal_object_id          = azuread_service_principal.mcp.object_id
   resource_service_principal_object_id = azuread_service_principal.mcp.object_id
-  claim_values                         = ["Lakehouse.Query"]
+  claim_values                         = ["MCP.Access"]
 }
 
 # The Azure CLI may ask for the scope without a consent prompt, so the owner can test with
-#   az account get-access-token --scope api://<client id>/Lakehouse.Query
+#   az account get-access-token --scope api://<client id>/MCP.Access
 resource "azuread_application_pre_authorized" "mcp_azure_cli" {
   application_id       = azuread_application.mcp.id
   authorized_client_id = local.azure_cli

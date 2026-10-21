@@ -31,7 +31,7 @@ def verifier(settings, key):
 
 @pytest.fixture
 def make_token(settings, key):
-    def make(roles=("Lakehouse.Query",), scp="Lakehouse.Query", **over):
+    def make(roles=("Lakehouse.Query",), scp="MCP.Access", **over):
         now = int(time.time())
         claims = {
             "iss": settings.issuer, "aud": CLIENT, "sub": "subject", "oid": OWNER, "tid": TENANT,

@@ -2,9 +2,9 @@
 
 A token is accepted (signature from Entra's keys, issuer = the tenant's v2.0 issuer, audience =
 this app) and mapped to an AccessToken. The scope this server requires (settings.scope, e.g.
-api://<app>/Lakehouse.Query) is granted only when the token has *both*:
+api://<app>/MCP.Access) is granted only when the token has *both*:
 
-  - the delegated scope `scp` Lakehouse.Query: the client asked for it, and
+  - the delegated scope `scp` MCP.Access: the client asked for it, and
   - the app role `roles` Lakehouse.Query: the user is assigned to the app in Entra.
 
 Without the role a valid token still authenticates but lacks the scope, so the SDK answers
@@ -58,11 +58,10 @@ class EntraTokenVerifier:
         return self.to_access_token(token, claims)
 
     def to_access_token(self, token: str, claims: dict[str, Any]) -> AccessToken:
-        role = self.s.required_role
         delegated = set((claims.get("scp") or "").split())
         roles = set(claims.get("roles") or [])
         scopes = sorted(delegated | {f"role:{r}" for r in roles})
-        if role in delegated and role in roles:
+        if self.s.delegated_scope in delegated and self.s.required_role in roles:
             scopes.append(self.s.scope)
         return AccessToken(
             token=token,
