@@ -9,6 +9,7 @@ api://<app>/MCP.Access) is granted only when the token has *both*:
 
 Or, for an application signing in as itself (client credentials, e.g. the chat backend's
 workload identity): an app-only token (`idtyp` app, no `scp`) with app role Lakehouse.Query.
+(`idtyp` is an optional claim: the MCP app requests it in infra/gitops/mcp.tf.)
 
 Without the role a valid token still authenticates but lacks the scope, so the SDK answers
 403 insufficient_scope; an invalid or missing token gets 401 with the resource metadata URL.

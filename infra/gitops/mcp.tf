@@ -41,6 +41,14 @@ resource "azuread_application" "mcp" {
     enabled              = true
   }
 
+  # Mark app-only tokens (the chat backend's identity) with idtyp = "app". The MCP server tells them
+  # from user tokens by it, and Entra only sends it when asked; user tokens never carry it.
+  optional_claims {
+    access_token {
+      name = "idtyp"
+    }
+  }
+
   # Claude's custom connectors (web, with the client secret).
   web {
     redirect_uris = ["https://claude.ai/api/mcp/auth_callback", "https://claude.com/api/mcp/auth_callback"]
