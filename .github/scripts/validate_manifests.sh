@@ -41,6 +41,10 @@ for name in chess-api chess-web chess-mcp chess-chat; do
   echo "rendered $name pinned to a digest"
 done
 
+# Kustomize directories as Argo CD builds them (deploy/grafana-dashboards: dashboards → ConfigMap).
+kubectl kustomize deploy/grafana-dashboards > "$out/grafana-dashboards.yaml"
+python3 -c 'import json,sys; [json.load(open(f)) for f in sys.argv[1:]]' deploy/grafana-dashboards/*.json
+
 kubeconform -strict -summary -ignore-missing-schemas \
   -schema-location default \
   -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \

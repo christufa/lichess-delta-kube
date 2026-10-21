@@ -99,12 +99,13 @@ spec:
                     "schemas": [
                       {"user": "lichess-jobs", "catalog": "lake", "schema": ".*", "owner": false},
                       {"user": "chess-mcp", "catalog": "lake", "schema": "(curated|gold)", "owner": false},
-                      {"user": "chess-api", "catalog": "lake", "schema": "gold", "owner": false}
+                      {"user": "chess-api", "catalog": "lake", "schema": "(gold|ops)", "owner": false}
                     ],
                     "tables": [
                       {"user": "lichess-jobs", "catalog": "lake", "privileges": ["SELECT"]},
                       {"user": "chess-mcp", "catalog": "lake", "schema": "(curated|gold)", "privileges": ["SELECT"]},
                       {"user": "chess-api", "catalog": "lake", "schema": "gold", "privileges": ["SELECT"]},
+                      {"user": "chess-api", "catalog": "lake", "schema": "ops", "table": "azure_cost", "privileges": ["SELECT"]},
                       {"user": "lichess-jobs|chess-(api|mcp)", "catalog": "system", "privileges": ["SELECT"]}
                     ],
                     "system_information": [

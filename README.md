@@ -60,7 +60,8 @@ Errors: `400` for a range whose `from` is after `to`, `422` for an invalid param
 `Retry-After`) above about 5 requests a second per IP with bursts of 60, `503` if the data store
 is unavailable. Responses are cached for an hour and carry an `ETag`; the data changes monthly.
 The API's health probes are deliberately not routed publicly; `https://chess.generops.dev/healthz`
-is the dashboard's web server answering `ok`, not the API.
+is the dashboard's web server answering `ok`, not the API. Neither is `/internal/v1/costs`: the
+project's daily Azure cost for the Grafana dashboard, reachable only from Grafana inside the cluster.
 
 ### Private: owner's Entra sign-in, through Cloudflare Access
 

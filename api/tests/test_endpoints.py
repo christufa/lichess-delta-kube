@@ -114,3 +114,35 @@ def test_queries_only_touch_gold(client, fake):
     client.get("/api/v1/openings", params={"from": "2015-11", "to": "2015-12"})
     assert len(fake.calls) == 4
     assert all("lake.gold." in sql and "curated" not in sql for sql, _ in fake.calls)
+
+
+def test_internal_costs(client, fake, monkeypatch):
+    import datetime as dt
+
+    import chess_api.app as app_module
+
+    class Today(dt.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return dt.datetime(2026, 10, 21, tzinfo=tz)
+
+    monkeypatch.setattr(app_module.dt, "datetime", Today)
+    r = client.get("/internal/v1/costs", params={"months": 2})  # 2026-09 and 2026-10
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["from_month"] == "2026-09" and body["currency"] == "USD"
+    assert body["rows"] == [
+        {"date": "2026-10-19", "service": "Azure Kubernetes Service", "cost": 2.0},
+        {"date": "2026-10-19", "service": "Storage", "cost": 1.0},  # summed across resource groups
+        {"date": "2026-10-20", "service": "Azure Kubernetes Service", "cost": 3.0},
+    ]
+    sql, params = fake.calls[-1]
+    assert "lake.ops.azure_cost" in sql and params == ["2026-09"]
+
+
+def test_internal_costs_is_not_public(client, fake):
+    # Through Cloudflare (it adds cf-connecting-ip): 404, and Trino isn't asked.
+    assert client.get("/internal/v1/costs", headers={"cf-connecting-ip": "203.0.113.9"}).status_code == 404
+    assert not fake.calls
+    assert client.get("/internal/v1/costs", params={"months": 0}).status_code == 422
+    assert "/internal/v1/costs" not in client.get("/api/openapi.json").json()["paths"]

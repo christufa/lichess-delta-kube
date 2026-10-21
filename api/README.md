@@ -19,6 +19,11 @@ Python 3.13, FastAPI, Pydantic v2, managed with [uv](https://docs.astral.sh/uv/)
   `OTEL_EXPORTER_OTLP_ENDPOINT` is set (no collector in the cluster yet).
 - **Probes:** `/healthz` (process up), `/readyz` (Trino answers `SELECT 1`, re-checked at
   most every 30 s).
+- **Internal:** `GET /internal/v1/costs?months=3`: the project's daily Azure cost by service
+  (`lake.ops.azure_cost`) for the Grafana workflows dashboard (#31).
+  - It isn't public in three ways: cloudflared routes only `/api/`, the network policy lets only Grafana in, and a request carrying `CF-Connecting-IP` gets a 404.
+  - It's left out of `openapi.json`, so it's not part of the dashboard's contract.
+  - Trino lets the `chess-api` user read that one `ops` table besides `gold`.
 
 ## Endpoints
 

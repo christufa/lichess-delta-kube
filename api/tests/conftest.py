@@ -18,6 +18,8 @@ CREATE TABLE monthly_summary (month TEXT, speed TEXT, games INT, players INT, wh
 CREATE TABLE openings (month TEXT, speed TEXT, eco TEXT, opening TEXT, rating_band INT, games INT,
                        white_wins INT, draws INT, black_wins INT, unfinished INT);
 CREATE TABLE rating_distribution (month TEXT, speed TEXT, rating_bucket INT, player_games INT, players INT);
+CREATE TABLE azure_cost (month TEXT, usage_date TEXT, resource_group TEXT, service_name TEXT, resource_type TEXT,
+                         cost REAL, currency TEXT);
 """
 
 SUMMARY = [
@@ -49,8 +51,20 @@ RATINGS = [
 ]
 
 
+COSTS = [
+    # month, usage_date, resource_group, service_name, resource_type, cost, currency
+    ("2026-08", "2026-08-31", "rg-a", "Storage", "storageaccounts", 0.5, "USD"),
+    ("2026-10", "2026-10-19", "rg-a", "Storage", "storageaccounts", 0.25, "USD"),
+    ("2026-10", "2026-10-19", "rg-b", "Storage", "storageaccounts", 0.75, "USD"),
+    ("2026-10", "2026-10-19", "rg-b", "Azure Kubernetes Service", "managedclusters", 2.0, "USD"),
+    ("2026-10", "2026-10-20", "rg-b", "Azure Kubernetes Service", "managedclusters", 3.0, "USD"),
+]
+ALLOWED_OUTSIDE_GOLD = {"lake.ops.azure_cost"}  # the internal cost endpoint's one table
+
+
 class FakeTrino:
-    """Runs queries on SQLite after dropping the `lake.gold.` prefix; refuses anything outside gold."""
+    """Runs queries on SQLite after dropping the `lake.<schema>.` prefix; refuses anything outside gold
+    except lake.ops.azure_cost (what Trino's rules allow chess-api)."""
 
     def __init__(self):
         self.conn = sqlite3.connect(":memory:", check_same_thread=False)
@@ -58,6 +72,7 @@ class FakeTrino:
         self.conn.executemany("INSERT INTO monthly_summary VALUES (?,?,?,?,?,?,?,?,?,?)", SUMMARY)
         self.conn.executemany("INSERT INTO openings VALUES (?,?,?,?,?,?,?,?,?,?)", OPENINGS)
         self.conn.executemany("INSERT INTO rating_distribution VALUES (?,?,?,?,?)", RATINGS)
+        self.conn.executemany("INSERT INTO azure_cost VALUES (?,?,?,?,?,?,?)", COSTS)
         self.lock = threading.Lock()
         self.calls: list[tuple[str, list]] = []
         self.down = False
@@ -68,8 +83,8 @@ class FakeTrino:
             if self.down:
                 raise TrinoUnavailable("connection refused")
             for ref in re.findall(r"\blake\.\w+\.\w+", sql):
-                assert ref.startswith("lake.gold."), f"query outside gold: {ref}"
-            cur = self.conn.execute(sql.replace("lake.gold.", ""), list(params))
+                assert ref.startswith("lake.gold.") or ref in ALLOWED_OUTSIDE_GOLD, f"query outside gold: {ref}"
+            cur = self.conn.execute(sql.replace("lake.gold.", "").replace("lake.ops.", ""), list(params))
             names = [d[0] for d in cur.description]
             return [dict(zip(names, row, strict=True)) for row in cur.fetchall()]
 
