@@ -103,9 +103,13 @@ resource "azurerm_monitor_action_group" "owner" {
 locals {
   # name => [PromQL, for (ISO 8601), severity 0-4 (0 = critical), summary]
   alerts = {
+    # Azure Managed Prometheus allows only `=` on the metric name; Argo's phases are lowercase and
+    # its `namespace` label is the controller's. The counter catches each failure; the gauge of
+    # failed workflows catches one right after a controller restart (a new series' first sample
+    # isn't an increase).
     WorkflowFailed = [
-      "sum by (namespace) (increase({__name__=~\"argo_workflows_total_count(_total)?\", phase=~\"Failed|Error\"}[15m])) > 0",
-      "PT1M", 2, "An Argo workflow failed in {{ $labels.namespace }}",
+      "(sum(increase(argo_workflows_total_count{phase=~\"failed|error\"}[15m])) > 0) or (sum(delta(argo_workflows_gauge{phase=~\"failed|error\"}[15m])) > 0)",
+      "PT1M", 2, "An Argo workflow failed (see Argo Workflows at chess-flows)",
     ]
     PodCrashLooping = [
       "max by (namespace, pod) (max_over_time(kube_pod_container_status_waiting_reason{reason=\"CrashLoopBackOff\", namespace!=\"kube-system\"}[5m])) >= 1",
