@@ -11,3 +11,9 @@ cloudflare_zone_id    = "<32 hex chars>"
 cloudflare_team_name  = "<team>"
 access_allowed_emails = ["you@example.com"]
 
+# The chat's Claude sign-in (chat/README.md), after the Claude Console's Connect workload wizard.
+# anthropic_federation = {
+#   organization_id    = "00000000-0000-0000-0000-000000000000"
+#   service_account_id = "svac_..."
+#   federation_rule_id = "fdrl_..."
+# }

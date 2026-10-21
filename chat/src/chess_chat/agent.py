@@ -15,7 +15,7 @@ from pydantic_ai.models import Model, ModelRequestParameters, StreamedResponse, 
 from pydantic_ai.models.wrapper import WrapperModel
 from pydantic_ai.settings import ModelSettings
 
-from .auth import WorkloadIdentityAuth
+from .auth import EntraIdentityToken, WorkloadIdentityAuth
 from .ledger import Ledger
 from .pricing import cost_usd, price_of
 from .settings import Settings
@@ -104,12 +104,38 @@ def model_settings_for(settings: Settings) -> ModelSettings:
     return ModelSettings(max_tokens=16_000)
 
 
+def build_model(settings: Settings) -> Model:
+    """The configured model. Claude signs in with Workload Identity Federation when the rule is
+    set; any other provider:model (or Claude with ANTHROPIC_API_KEY) the way Pydantic AI does."""
+    provider, _, name = settings.model.partition(":")
+    if provider != "anthropic" or not settings.anthropic_federated:
+        return infer_model(settings.model)
+    from anthropic import AsyncAnthropic, WorkloadIdentityCredentials
+    from pydantic_ai.models.anthropic import AnthropicModel
+    from pydantic_ai.providers.anthropic import AnthropicProvider
+
+    missing = [f for f in ("claude_audience_client_id", "anthropic_organization_id", "anthropic_service_account_id")
+               if not getattr(settings, f)]
+    if missing:
+        raise ValueError(f"Anthropic federation needs {', '.join(missing)}")
+    credentials = WorkloadIdentityCredentials(
+        identity_token_provider=EntraIdentityToken(f"api://{settings.claude_audience_client_id}/.default"),
+        federation_rule_id=settings.anthropic_federation_rule_id,
+        organization_id=settings.anthropic_organization_id,
+        service_account_id=settings.anthropic_service_account_id,
+        workspace_id=settings.anthropic_workspace_id or None,
+    )
+    # Explicit credentials outrank ANTHROPIC_API_KEY, so a stray key can't take over.
+    client = AsyncAnthropic(credentials=credentials)
+    return AnthropicModel(name, provider=AnthropicProvider(anthropic_client=client))
+
+
 def build_agent(settings: Settings, ledger: Ledger, *, model: Model | None = None,
                 toolsets: list | None = None, auth_factory: Callable[[str], Any] | None = None) -> Agent:
     price_of(settings.model)  # refuse to start with a model whose spend can't be capped
     if toolsets is None:
         auth = (auth_factory or WorkloadIdentityAuth)(f"api://{settings.mcp_client_id}/.default")
         toolsets = [MCPToolset(settings.mcp_url, auth=auth, include_instructions=True, tool_error_behavior="retry")]
-    metered = MeteredModel(model or infer_model(settings.model), settings.model, ledger)
+    metered = MeteredModel(model or build_model(settings), settings.model, ledger)
     return Agent(metered, instructions=INSTRUCTIONS, toolsets=toolsets, model_settings=model_settings_for(settings),
                  retries=3)

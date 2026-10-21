@@ -7,6 +7,15 @@ entra:
   chatClientId: "" # the "chess Chat" app: who may chat (infra/gitops/chat.tf)
   mcpClientId: "" # the "chess MCP" app: the token the backend gets for the MCP server
 
+# Claude by Anthropic Workload Identity Federation (chat/README.md): no API key. The IDs come
+# from the facts; while federationRuleId is empty the chat stays off (503).
+anthropic:
+  audienceClientId: "" # the "Claude API audience" app (infra/gitops/chat.tf)
+  organizationId: ""
+  serviceAccountId: "" # svac_...
+  federationRuleId: "" # fdrl_...
+  workspaceId: ""      # wrkspc_..., optional
+
 image:
   repository: lichess-chat # lichess-*: Kyverno checks its cosign signature (charts/platform)
   tag: main # used only while no digest is set

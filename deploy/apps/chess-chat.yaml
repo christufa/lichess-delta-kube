@@ -2,7 +2,8 @@
 # - Public at https://chess.<domain>/api/v1/chat (infra/gitops/edge.tf); every request needs an
 #   Entra token with app role Chat.User on the "chess Chat" app (infra/gitops/chat.tf).
 # - Reads the lakehouse only through the MCP server, as its managed identity (workload identity,
-#   app role Lakehouse.Query on the MCP app). The model's API key comes from Key Vault.
+#   app role Lakehouse.Query on the MCP app). The same identity signs in to Claude by Anthropic
+#   Workload Identity Federation: no API key (chat/README.md).
 # - Network: only cloudflared may connect; it may call the MCP server, DNS, and HTTPS out (the
 #   model provider and Entra) (deploy/network-policies/chess-chat.yaml).
 # - Image lichess-chat from the cluster's ACR, built and signed by images.yml. New builds
@@ -56,6 +57,12 @@ spec:
               tenantId: '{{ index .metadata.annotations "lichess.generops.dev/tenant-id" }}'
               chatClientId: '{{ index .metadata.annotations "lichess.generops.dev/chat-client-id" }}'
               mcpClientId: '{{ index .metadata.annotations "lichess.generops.dev/mcp-client-id" }}'
+            anthropic:
+              audienceClientId: '{{ index .metadata.annotations "lichess.generops.dev/claude-audience-id" }}'
+              organizationId: '{{ index .metadata.annotations "lichess.generops.dev/anthropic-organization-id" }}'
+              serviceAccountId: '{{ index .metadata.annotations "lichess.generops.dev/anthropic-service-account-id" }}'
+              federationRuleId: '{{ index .metadata.annotations "lichess.generops.dev/anthropic-federation-rule-id" }}'
+              workspaceId: '{{ index .metadata.annotations "lichess.generops.dev/anthropic-workspace-id" }}'
             image:
               digest: '{{ .image.digest }}'
               commit: '{{ .image.commit }}'

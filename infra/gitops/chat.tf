@@ -5,10 +5,12 @@
 # Everyone else can see the chat panel but not send.
 #
 # The backend itself reads the lakehouse through the MCP server as its own managed identity
-# (infra/compute/chat.tf), which gets the MCP app's role Lakehouse.Query below.
+# (infra/compute/chat.tf), which gets the MCP app's role Lakehouse.Query below. The same identity
+# signs in to Claude: no API key, see "Claude without an API key" at the end.
 locals {
-  chat_scope_id = "7282c03e-5510-4cab-94da-451fd1d288e1" # oauth2 permission scope Chat.Access
-  chat_role_id  = "e0ae1a3f-041d-463f-acc3-2ef3308ab628" # app role Chat.User
+  chat_scope_id        = "7282c03e-5510-4cab-94da-451fd1d288e1" # oauth2 permission scope Chat.Access
+  chat_role_id         = "e0ae1a3f-041d-463f-acc3-2ef3308ab628" # app role Chat.User
+  claude_federate_role = "44e8a526-bb52-4960-82a1-7fe5c8f53453" # app role Claude.Federate
 }
 
 resource "azuread_application" "chat" {
@@ -85,4 +87,53 @@ resource "azuread_app_role_assignment" "chat_backend_mcp" {
   app_role_id         = local.mcp_role_id
   principal_object_id = local.compute.chat_identity_principal_id
   resource_object_id  = azuread_service_principal.mcp.object_id
+}
+
+# --- Claude without an API key: Anthropic Workload Identity Federation ------------------------
+# The chat backend gets an Entra token for this audience app as its managed identity and hands it
+# to Anthropic, which checks it against a federation rule (issuer = this tenant's v2.0 issuer,
+# audience = this app, oid = the chat identity) and returns a short-lived Claude API token for an
+# Anthropic service account. The service account, issuer and rule live in the Claude Console
+# (chat/README.md); their IDs come back here as var.anthropic_federation.
+#
+# Assignment is required, and only the chat identity holds the role, so no other identity in the
+# tenant can even get a token for this audience.
+resource "azuread_application" "claude_audience" {
+  display_name     = "${var.hostname_prefix} Claude API audience"
+  sign_in_audience = "AzureADMyOrg"
+  owners           = [data.azuread_client_config.current.object_id]
+
+  api {
+    requested_access_token_version = 2 # the issuer Anthropic trusts is the tenant's v2.0 one
+  }
+
+  app_role {
+    id                   = local.claude_federate_role
+    value                = "Claude.Federate"
+    display_name         = "Federate to Claude"
+    description          = "May get tokens to exchange for a Claude API token (Anthropic Workload Identity Federation)."
+    allowed_member_types = ["Application"]
+    enabled              = true
+  }
+
+  lifecycle {
+    ignore_changes = [identifier_uris] # set by azuread_application_identifier_uri.claude_audience
+  }
+}
+
+resource "azuread_application_identifier_uri" "claude_audience" {
+  application_id = azuread_application.claude_audience.id
+  identifier_uri = "api://${azuread_application.claude_audience.client_id}"
+}
+
+resource "azuread_service_principal" "claude_audience" {
+  client_id                    = azuread_application.claude_audience.client_id
+  owners                       = [data.azuread_client_config.current.object_id]
+  app_role_assignment_required = true
+}
+
+resource "azuread_app_role_assignment" "chat_backend_claude" {
+  app_role_id         = local.claude_federate_role
+  principal_object_id = local.compute.chat_identity_principal_id
+  resource_object_id  = azuread_service_principal.claude_audience.object_id
 }
