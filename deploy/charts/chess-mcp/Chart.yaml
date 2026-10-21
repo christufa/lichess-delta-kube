@@ -1,0 +1,8 @@
+apiVersion: v2
+name: chess-mcp
+description: >-
+  The lakehouse MCP server (mcp-server/, #68) over lake.curated and lake.gold, in namespace
+  chess-mcp. The registry and the Entra app (tenant, client ID) come from the Argo CD cluster secret written by infra/gitops, through the
+  `chess-mcp` ApplicationSet; nothing deployment-specific is in git.
+type: application
+version: 0.1.0

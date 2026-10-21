@@ -4,7 +4,7 @@
 # read them with a git files generator, so a new signed build is a manifest change Argo CD syncs.
 # Called by images.yml (job release) from a full-history checkout of main.
 #
-#   env: CHESS_API, CHESS_WEB  sha256:… digest that build pushed and signed; empty when
+#   env: CHESS_API, CHESS_WEB, CHESS_MCP  sha256:… digest that build pushed and signed; empty when
 #                              that image wasn't published (its file is left as it was)
 #
 # deploy-state isn't covered by main's ruleset (PRs + review), so GITHUB_TOKEN can push.
@@ -32,7 +32,7 @@ EOF
 fi
 
 changed=()
-for app in chess-api chess-web; do
+for app in chess-api chess-web chess-mcp; do
   var=${app^^}; var=${var//-/_}
   digest=${!var:-}
   [ -n "$digest" ] || { echo "$app: not published in this run, unchanged"; continue; }

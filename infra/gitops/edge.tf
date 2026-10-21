@@ -41,16 +41,26 @@ locals {
     }
   }
   public_hostname = var.hostname_prefix == "" ? var.domain : "${var.hostname_prefix}.${var.domain}"
+  # The MCP server (#68) gets its own hostname: no Cloudflare Access (MCP clients can't do its
+  # browser sign-in), the server itself requires an Entra token with app role Lakehouse.Query.
+  mcp_hostname = "${var.hostname_prefix}-mcp.${var.domain}"
   # A list, not a map: cloudflared takes the first rule that matches, so the API's path
   # must come before the dashboard's catch-all.
   public_routes = [
     {
-      path    = "^/api/"
-      service = "http://chess-api.chess-api.svc.cluster.local:80"
+      hostname = local.public_hostname
+      path     = "^/api/"
+      service  = "http://chess-api.chess-api.svc.cluster.local:80"
     },
     {
-      path    = null # every other path
-      service = "http://chess-web.chess-web.svc.cluster.local:80"
+      hostname = local.public_hostname
+      path     = null # every other path
+      service  = "http://chess-web.chess-web.svc.cluster.local:80"
+    },
+    {
+      hostname = local.mcp_hostname
+      path     = null
+      service  = "http://chess-mcp.chess-mcp.svc.cluster.local:80"
     },
   ]
   tunnel_hosts = {
@@ -139,7 +149,7 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "aks" {
         }
       }],
       [for r in local.public_routes : {
-        hostname = local.public_hostname
+        hostname = r.hostname
         path     = r.path
         service  = r.service
       }],
@@ -189,6 +199,16 @@ resource "cloudflare_dns_record" "public" {
   proxied = true
   ttl     = 1 # automatic (proxied)
   comment = "lichess-delta-kube: public routes via Cloudflare Tunnel (infra/gitops/edge.tf)"
+}
+
+resource "cloudflare_dns_record" "mcp" {
+  zone_id = var.cloudflare_zone_id
+  name    = local.mcp_hostname
+  type    = "CNAME"
+  content = "${local.tunnel_ids.aks}.cfargotunnel.com"
+  proxied = true
+  ttl     = 1 # automatic (proxied)
+  comment = "lichess-delta-kube: MCP server via Cloudflare Tunnel (infra/gitops/edge.tf)"
 }
 
 # The tunnel token for cloudflared, straight into the cluster (never in a file or git).

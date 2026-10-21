@@ -1,0 +1,78 @@
+# chess-mcp (deploy/charts/chess-mcp): the lakehouse MCP server (mcp-server/, #68).
+# - Public at https://chess-mcp.<domain>/mcp (infra/gitops/edge.tf), but every MCP request needs
+#   an Entra token with app role Lakehouse.Query on the "chess MCP" app (infra/gitops/mcp.tf):
+#   only assigned accounts get one.
+# - Signs in to Trino as chess-mcp with a projected service account token (audience trino);
+#   Trino's rules (apps/trino.yaml) let it read lake.curated and lake.gold, nothing else.
+# - Network: cloudflared and the chat backend may connect; it may call Trino, DNS, and HTTPS
+#   out (Entra's signing keys) (deploy/network-policies/chess-mcp.yaml).
+# - Image lichess-mcp from the cluster's ACR, built and signed by images.yml. New builds
+#   roll out without kubectl: after each signed main build, images.yml commits its digest
+#   to the deploy-state branch (chess-mcp.yaml). The git generator below reads that file and
+#   puts the digest into the Helm values, so a new build is a manifest change Argo CD syncs
+#   (deploy/README.md, "Rolling out new builds"). Not a second source: Argo CD can't mix two
+#   revisions (main, deploy-state) of one repository in an Application.
+# ApplicationSet so the registry and the Entra app come from the cluster facts.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: chess-mcp
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - matrix:
+        generators:
+          - clusters:
+              selector:
+                matchLabels:
+                  lichess.generops.dev/facts: "true"
+          - git: # image.digest + image.commit of the newest signed main build (images.yml)
+              repoURL: https://github.com/christufa/lichess-delta-kube.git
+              revision: deploy-state
+              files:
+                - path: chess-mcp.yaml
+  # If the file ever went missing, the generator would yield nothing: keep the Application
+  # (and its workloads) rather than deleting them.
+  syncPolicy:
+    applicationsSync: create-update
+    preserveResourcesOnDeletion: true
+  template:
+    metadata:
+      name: chess-mcp
+      annotations:
+        argocd.argoproj.io/sync-wave: "3" # with Trino, after the CA bundle (wave 2)
+    spec:
+      project: lichess
+      source:
+        repoURL: https://github.com/christufa/lichess-delta-kube.git
+        targetRevision: main
+        path: deploy/charts/chess-mcp
+        helm:
+          valuesObject:
+            acrLoginServer: '{{ index .metadata.annotations "lichess.generops.dev/acr-login-server" }}'
+            entra:
+              tenantId: '{{ index .metadata.annotations "lichess.generops.dev/tenant-id" }}'
+              clientId: '{{ index .metadata.annotations "lichess.generops.dev/mcp-client-id" }}'
+            image:
+              digest: '{{ .image.digest }}'
+              commit: '{{ .image.commit }}'
+      destination:
+        server: '{{ .server }}'
+        namespace: chess-mcp
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+        managedNamespaceMetadata:
+          labels: # Pod Security Admission (#62): only pods meeting "restricted" may run here
+            pod-security.kubernetes.io/enforce: restricted
+            pod-security.kubernetes.io/enforce-version: latest
+            pod-security.kubernetes.io/warn: restricted
+            pod-security.kubernetes.io/audit: restricted
+        retry:
+          limit: 10
+          backoff: { duration: 30s, factor: 2, maxDuration: 5m }

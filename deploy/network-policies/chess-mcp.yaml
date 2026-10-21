@@ -1,0 +1,78 @@
+# chess-mcp: default-deny in both directions, like chess-api.
+#
+# Allowed in:
+#   - cloudflared → :8000 (https://chess-mcp.<domain>/mcp, infra/gitops/edge.tf)
+#   - chess-api → :8000 (the chat backend calls the MCP server in-cluster, #69)
+#   - kubelet probes: Cilium always allows the local node (host) to reach its pods
+# Allowed out:
+#   - Trino coordinator :8443
+#   - kube-dns :53
+#   - HTTPS (:443) to the internet: Entra ID's signing keys (login.microsoftonline.com) to
+#     check tokens. AKS's Cilium doesn't filter by name without the Advanced Container
+#     Networking add-on, so this is by port; the pod holds no credentials worth exfiltrating
+#     (its Trino token is read-only and only valid inside the cluster).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: default-deny
+  namespace: chess-mcp
+spec:
+  endpointSelector: {}
+  ingress:
+    - fromEndpoints:
+        - {} # any pod in this namespace
+  egress:
+    - toEndpoints:
+        - {} # any pod in this namespace
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-cloudflared-and-chat
+  namespace: chess-mcp
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: chess-mcp
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: cloudflared
+            app.kubernetes.io/name: cloudflared
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: chess-api
+            app.kubernetes.io/name: chess-api
+      toPorts:
+        - ports:
+            - { port: "8000", protocol: TCP }
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-trino-dns-entra
+  namespace: chess-mcp
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: chess-mcp
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: trino
+            app.kubernetes.io/name: trino
+            app.kubernetes.io/component: coordinator
+      toPorts:
+        - ports:
+            - { port: "8443", protocol: TCP }
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - { port: "53", protocol: UDP }
+            - { port: "53", protocol: TCP }
+    - toEntities: [world]
+      toPorts:
+        - ports:
+            - { port: "443", protocol: TCP }
