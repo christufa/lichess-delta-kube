@@ -100,7 +100,9 @@ Next, all by choice, none urgent:
 - The opening explorer `gold.position_moves` (#65) and per-position data (#29).
 - Backfill (#24) and teardown (#48).
 - Trino worker autoscaling (KEDA).
-- Catalog recovery: the two CNPG Postgres clusters (Lakekeeper catalog, OpenFGA) have no backups.
+- Catalog recovery: the two CNPG Postgres clusters (Lakekeeper catalog, OpenFGA) have no backups, by
+  decision. Tables come back from the lake instead: a weekly inventory + drill and a restore job
+  (`spark/jobs/catalog_recovery.py`, `docs/runbooks/catalog-recovery.md`, #125).
 
 ## Conventions
 
