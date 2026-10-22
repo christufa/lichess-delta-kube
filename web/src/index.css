@@ -52,6 +52,8 @@
   --result-unfinished: #d8d6cf;
   --chart-text: #4b4d61;
   --chart-grid: #e7e8f0;
+  --board-light: #ebe6f5; /* the explorer's board, tinted toward the brand violet */
+  --board-dark: #8f7fc4;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -95,6 +97,8 @@
     --result-unfinished: #4a4945;
     --chart-text: #b8bbcf;
     --chart-grid: #2b2d3f;
+    --board-light: #c9c2dd;
+    --board-dark: #6a5a9e;
   }
 }
 

@@ -1,5 +1,7 @@
 import type { Page, Route } from "@playwright/test";
 import type {
+  Explorer,
+  ExplorerMove,
   Months,
   Openings,
   RatingBucket,
@@ -101,6 +103,50 @@ function json(route: Route, body: unknown, status = 200) {
 }
 
 /** Answers /api/v1/* like the real API; `fail` makes the matching endpoints return 503. */
+// The explorer: a few known positions (key = the FEN's first three fields); anything else is empty.
+const START_POSITION = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq";
+const AFTER_E4_POSITION = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq";
+
+function move(san: string, games: number, white: number, draws: number, example: string | null): ExplorerMove {
+  return {
+    move: san,
+    games,
+    white_wins: white,
+    draws,
+    black_wins: games - white - draws,
+    avg_rating: example ? 1650 + games % 300 : null,
+    example_game_id: example,
+    example_rating: example ? 2450 : null,
+  };
+}
+
+const EXPLORER_MOVES: Record<string, ExplorerMove[]> = {
+  [START_POSITION]: [
+    move("e4", 51_681_998, 25_551_119, 1_942_888, "aBcDeFgH"),
+    move("d4", 22_962_224, 11_571_605, 905_360, "iJkLmNoP"),
+    move("Nf3", 3_217_412, 1_636_473, 140_678, "qRsTuVwX"),
+    move("c4", 2_753_204, 1_397_172, 113_750, null),
+  ],
+  [AFTER_E4_POSITION]: [
+    move("c5", 12_000_000, 5_700_000, 400_000, "YzAbCdEf"),
+    move("e5", 11_000_000, 5_300_000, 500_000, "GhIjKlMn"),
+  ],
+};
+
+export function explorer(fen: string, q: URLSearchParams): Explorer {
+  const position = fen.split(" ").slice(0, 3).join(" ");
+  const moves = EXPLORER_MOVES[position] ?? [];
+  return {
+    position,
+    from_month: q.get("from"),
+    to_month: q.get("to"),
+    speed: (q.get("speed") as Speed | null) ?? null,
+    rating_band: q.has("rating_band") ? (Number(q.get("rating_band")) as Explorer["rating_band"]) : null,
+    games: moves.reduce((s, m) => s + m.games, 0),
+    moves,
+  };
+}
+
 export async function mockApi(page: Page, opts: { fail?: RegExp } = {}) {
   await page.route("**/api/v1/**", (route) => {
     const url = new URL(route.request().url());
@@ -126,6 +172,8 @@ export async function mockApi(page: Page, opts: { fail?: RegExp } = {}) {
             Number(q.get("limit") ?? 20),
           ),
         );
+      case "/api/v1/explorer":
+        return json(route, explorer(q.get("fen") ?? `${START_POSITION} - 0 1`, q));
       default:
         return json(route, { detail: "Not Found" }, 404);
     }
