@@ -111,6 +111,8 @@ if os.environ.get("FAKE_ARIA2_FAIL"):
 assert url.endswith(".torrent"), url
 src = url[: -len(".torrent")]
 data = urllib.request.urlopen(src).read()
+if os.environ.get("FAKE_ARIA2_STALE"):  # a .torrent of an older version of the file
+    data = data[:-1] + bytes([data[-1] ^ 1])
 with open(os.path.join(out_dir, src.rsplit("/", 1)[1]), "wb") as fh:
     fh.write(data)
 print("[#a1b2c3 %dB/%dB(100%%) CN:3 SD:2 DL:5MiB]" % (len(data), len(data)))

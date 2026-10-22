@@ -207,7 +207,8 @@ def download_verified(entry: MonthEntry, work_dir: str, retries: int = 5, progre
     """Download (resuming any partial file) and verify sha256. Returns (path, stats).
 
     method: "torrent" (aria2c), "http", or "auto" (torrent if aria2c is installed).
-    A torrent that fails or stalls falls back to HTTPS.
+    A torrent that fails, stalls or gives a file with the wrong sha256 falls back to HTTPS
+    (some months were republished without a new .torrent: 2018-03's is the old file).
     """
     src_dir = os.path.join(work_dir, "src")
     os.makedirs(src_dir, exist_ok=True)
@@ -216,9 +217,14 @@ def download_verified(entry: MonthEntry, work_dir: str, retries: int = 5, progre
     t0 = time.perf_counter()
     method = resolve_method(method)
     stats["method"] = method
+    actual = None
     if method == "torrent":
         try:
             _torrent(entry, src_dir, out, stats, progress_every)
+            actual = sha256_file(out)
+            if actual != entry.sha256:
+                os.replace(out, out + ".bad")
+                raise RuntimeError("the torrent's file doesn't match sha256sums.txt")
         except (OSError, RuntimeError) as exc:
             log(f"{entry.month}: torrent failed; falling back to HTTPS", "WARN", error=str(exc)[:300])
             stats.update(method="http", torrent_error=str(exc)[:300])
@@ -238,7 +244,8 @@ def download_verified(entry: MonthEntry, work_dir: str, retries: int = 5, progre
             stats["retries"] = attempt
             time.sleep(wait)
     elapsed = time.perf_counter() - t0
-    actual = sha256_file(out)
+    if stats["method"] == "http":
+        actual = sha256_file(out)
     if actual != entry.sha256:
         os.replace(out, out + ".bad")  # don't resume from corrupt bytes next time
         raise ValueError(f"{entry.month}: sha256 mismatch (expected {entry.sha256}, got {actual}); "
