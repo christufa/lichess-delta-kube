@@ -42,10 +42,12 @@ ENV PATH=/opt/py/bin:$PATH \
     PYSPARK_PYTHON=/opt/py/bin/python3 \
     PYSPARK_DRIVER_PYTHON=/opt/py/bin/python3
 
-# pandas + pyarrow on every node: toPandas() with Arrow and pandas UDFs.
+# pandas + pyarrow on every node: toPandas() with Arrow and pandas UDFs. python-chess replays
+# move sequences into positions for the opening explorer (lichess_spark.explorer); GPL-3.0,
+# used only inside this batch image, never shipped to users.
 RUN --mount=from=uv,source=/uv,target=/usr/local/bin/uv \
     uv pip install --python "$(readlink -f /opt/py/bin/python3)" --system --break-system-packages \
-      "pandas>=2.2,<3" "pyarrow>=18"
+      "pandas>=2.2,<3" "pyarrow>=18" "chess==1.11.2"
 
 # Our code: the session helper as an importable package (a .pth file puts /opt/lichess/python on
 # the interpreter's path), jobs as plain scripts.
