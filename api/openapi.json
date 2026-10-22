@@ -1,6 +1,168 @@
 {
   "components": {
     "schemas": {
+      "Explorer": {
+        "properties": {
+          "from_month": {
+            "anyOf": [
+              {
+                "description": "YYYY-MM",
+                "examples": [
+                  "2015-12"
+                ],
+                "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "null = from the first month with data",
+            "title": "From Month"
+          },
+          "games": {
+            "description": "Games that continued from this position (sum over the moves)",
+            "title": "Games",
+            "type": "integer"
+          },
+          "moves": {
+            "description": "Moves played from the position at least 5 times in a month (first 16 plies), most played first",
+            "items": {
+              "$ref": "#/components/schemas/ExplorerMove"
+            },
+            "title": "Moves",
+            "type": "array"
+          },
+          "position": {
+            "description": "The position looked up: the first three FEN fields (placement, side to move, castling)",
+            "title": "Position",
+            "type": "string"
+          },
+          "rating_band": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RatingBand"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "null = every band"
+          },
+          "speed": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Speed"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "null = every speed"
+          },
+          "to_month": {
+            "anyOf": [
+              {
+                "description": "YYYY-MM",
+                "examples": [
+                  "2015-12"
+                ],
+                "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "null = to the last month with data",
+            "title": "To Month"
+          }
+        },
+        "required": [
+          "position",
+          "from_month",
+          "to_month",
+          "speed",
+          "rating_band",
+          "games",
+          "moves"
+        ],
+        "title": "Explorer",
+        "type": "object"
+      },
+      "ExplorerMove": {
+        "properties": {
+          "avg_rating": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Mean of both players' ratings over the rated games",
+            "title": "Avg Rating"
+          },
+          "black_wins": {
+            "title": "Black Wins",
+            "type": "integer"
+          },
+          "draws": {
+            "title": "Draws",
+            "type": "integer"
+          },
+          "example_game_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The highest-rated game with this move: https://lichess.org/<id>",
+            "title": "Example Game Id"
+          },
+          "example_rating": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "That game's average rating",
+            "title": "Example Rating"
+          },
+          "games": {
+            "title": "Games",
+            "type": "integer"
+          },
+          "move": {
+            "description": "The move in SAN, as played",
+            "title": "Move",
+            "type": "string"
+          },
+          "white_wins": {
+            "title": "White Wins",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "move",
+          "games",
+          "white_wins",
+          "draws",
+          "black_wins",
+          "avg_rating",
+          "example_game_id",
+          "example_rating"
+        ],
+        "title": "ExplorerMove",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -192,6 +354,18 @@
         ],
         "title": "Problem",
         "type": "object"
+      },
+      "RatingBand": {
+        "description": "The explorer's rating bands: lower bound of the players' average rating (0 = under 1200).",
+        "enum": [
+          0,
+          1200,
+          1600,
+          2000,
+          2400
+        ],
+        "title": "RatingBand",
+        "type": "integer"
       },
       "RatingBucket": {
         "properties": {
@@ -465,6 +639,169 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/explorer": {
+      "get": {
+        "description": "Opening explorer: the moves played from a position (first 16 plies), with results, the\naverage rating and the highest-rated example game. Move orders reaching the same position\ncount together.",
+        "operationId": "get_explorer",
+        "parameters": [
+          {
+            "description": "The position; default: the start",
+            "in": "query",
+            "name": "fen",
+            "required": false,
+            "schema": {
+              "default": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+              "description": "The position; default: the start",
+              "examples": [
+                "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+              ],
+              "pattern": "^([pnbrqkPNBRQK1-8]{1,8}/){7}[pnbrqkPNBRQK1-8]{1,8} [wb] (-|KQ?k?q?|Qk?q?|kq?|q)( (-|[a-h][36]))?( \\d+ \\d+)?$",
+              "title": "Fen",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Omit for all",
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Omit for all",
+              "examples": [
+                "2026-01"
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "description": "Omit for all",
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Omit for all",
+              "examples": [
+                "2026-09"
+              ],
+              "title": "To"
+            }
+          },
+          {
+            "description": "Omit for every speed",
+            "in": "query",
+            "name": "speed",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Speed"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Omit for every speed",
+              "title": "Speed"
+            }
+          },
+          {
+            "description": "Players' average rating band: 0 = under 1200, 1200, 1600, 2000, 2400+; omit for all",
+            "in": "query",
+            "name": "rating_band",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/RatingBand"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Players' average rating band: 0 = under 1200, 1200, 1600, 2000, 2400+; omit for all",
+              "title": "Rating Band"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Explorer"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "304": {
+            "description": "Not modified (If-None-Match matched the ETag)"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Invalid range"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many requests from this IP; see Retry-After"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The data store is unavailable; retry later"
+          }
+        },
+        "summary": "Get Explorer",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
     "/api/v1/months": {
       "get": {
         "description": "Months that have data, oldest first.",

@@ -22,12 +22,16 @@ from pydantic import BaseModel
 from . import queries
 from .caching import RateLimiter, ResponseCache
 from .models import (
+    FEN_PATTERN,
     MONTH_PATTERN,
+    START_FEN,
     Costs,
+    Explorer,
     Health,
     Months,
     Openings,
     Problem,
+    RatingBand,
     RatingDistribution,
     Speed,
     Summary,
@@ -139,6 +143,35 @@ def create_app(settings: Settings | None = None, db: QueryRunner | None = None) 
         key = f"openings:{from_month}:{to_month}:{speed}:{rating_band}:{limit}"
         return respond(
             request, key, lambda: queries.openings(db, from_month, to_month, speed, rating_band, limit)
+        )
+
+    @app.get("/api/v1/explorer", response_model=Explorer, responses={**CACHED, **ERRORS}, tags=["dashboard"])
+    def get_explorer(
+        request: Request,
+        fen: Annotated[
+            str, Query(pattern=FEN_PATTERN, examples=[START_FEN], description="The position; default: the start")
+        ] = START_FEN,
+        from_month: Annotated[
+            str | None, Query(alias="from", pattern=MONTH_PATTERN, examples=["2026-01"], description="Omit for all")
+        ] = None,
+        to_month: Annotated[
+            str | None, Query(alias="to", pattern=MONTH_PATTERN, examples=["2026-09"], description="Omit for all")
+        ] = None,
+        speed: Annotated[Speed | None, Query(description="Omit for every speed")] = None,
+        rating_band: Annotated[
+            RatingBand | None,
+            Query(description="Players' average rating band: 0 = under 1200, 1200, 1600, 2000, 2400+; omit for all"),
+        ] = None,
+    ) -> Response:
+        """Opening explorer: the moves played from a position (first 16 plies), with results, the
+        average rating and the highest-rated example game. Move orders reaching the same position
+        count together."""
+        if from_month and to_month:
+            _check_range(from_month, to_month)
+        position = queries.position_key(fen)
+        key = f"explorer:{position}:{from_month}:{to_month}:{speed}:{rating_band}"
+        return respond(
+            request, key, lambda: queries.explorer(db, fen, from_month, to_month, speed, rating_band)
         )
 
     # ---------------------------------------------------------------- internal (Grafana)
