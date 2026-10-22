@@ -1,9 +1,10 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { createRootRouteWithContext, createRoute, createRouter, lazyRouteComponent } from "@tanstack/react-router";
 import { Layout, NotFound } from "@/routes/layout";
+import { validateExplorerSearch } from "@/lib/explorer";
 import { validateOpeningsSearch, validateOverviewSearch } from "@/lib/search";
 
-// Code-based routes: two pages, each its own chunk (ECharts loads with the overview);
+// Code-based routes: three pages, each its own chunk (ECharts loads with the overview);
 // filter state lives in the URL's search params.
 
 const rootRoute = createRootRouteWithContext<{ queryClient: QueryClient }>()({
@@ -25,7 +26,15 @@ const openingsRoute = createRoute({
   component: lazyRouteComponent(() => import("@/routes/openings"), "OpeningsPage"),
 });
 
-const routeTree = rootRoute.addChildren([overviewRoute, openingsRoute]);
+// The board (react-chessboard, chess.js) loads with this page only.
+const explorerRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/explorer",
+  validateSearch: validateExplorerSearch,
+  component: lazyRouteComponent(() => import("@/routes/explorer"), "ExplorerPage"),
+});
+
+const routeTree = rootRoute.addChildren([overviewRoute, openingsRoute, explorerRoute]);
 
 export function makeRouter(queryClient: QueryClient) {
   return createRouter({

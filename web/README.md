@@ -21,7 +21,15 @@ origin. No sign-in.
   it ran (SQL and row count) and the answer (markdown, tables). Everyone sees the panel; only
   accounts with the "chess Chat" app role can send.
 
-The opening explorer (board) from #67 is not built yet.
+- **Explorer (#65):** a board (`react-chessboard` + `chess.js`, MIT/BSD): drag a piece or pick a
+  move from the table to see what Lichess players played next from that position, with results,
+  the average rating and the top-rated example game (opens on lichess.org).
+  - Move orders reaching the same position count together.
+  - Data: `/api/v1/explorer` over `gold.position_moves` (each game's first 16 plies, moves played 5+ times a month).
+  - The line lives in the URL (`/explorer?moves=e4,c5,Nf3`), so back/forward and sharing work.
+  - The same filters as Openings (months, speed, rating band), with the explorer's coarser bands.
+  - Every piece has a name for screen readers (the board makes pieces draggable buttons).
+  - The board's code loads with this page only.
 
 ## Design
 

@@ -21,6 +21,7 @@ function readChatOpen(): boolean {
 const NAV = [
   { to: "/", label: "Overview" },
   { to: "/openings", label: "Openings" },
+  { to: "/explorer", label: "Explorer" },
 ] as const;
 
 /**
@@ -87,12 +88,13 @@ export function Layout() {
                 aria-expanded={chatOpen}
                 aria-controls="chat-panel"
                 className={cn(
-                  "group relative flex items-center gap-1.5 overflow-hidden rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors",
+                  "group relative flex items-center gap-1.5 overflow-hidden rounded-full border px-2.5 py-1.5 text-sm font-medium transition-colors sm:px-3.5",
                   chatOpen ? "bg-foreground text-background" : "bg-background hover:border-brand-1/40",
                 )}
               >
                 <Sparkles className={cn("size-4", !chatOpen && "text-brand-1")} aria-hidden="true" />
-                Ask
+                {/* Icon only on a phone (the header has three page links); the name stays. */}
+                <span className="sr-only sm:not-sr-only">Ask</span>
               </button>
             </div>
           </div>
@@ -176,7 +178,7 @@ function MainNav() {
               to={item.to}
               viewTransition
               activeOptions={{ exact: true, includeSearch: false }}
-              className="text-muted-foreground hover:text-foreground aria-[current=page]:text-foreground block rounded-full px-4 py-1.5 text-sm font-medium transition-colors"
+              className="text-muted-foreground hover:text-foreground aria-[current=page]:text-foreground block rounded-full px-3 py-1.5 text-sm font-medium transition-colors sm:px-4"
             >
               {item.label}
             </Link>
