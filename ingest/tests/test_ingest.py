@@ -251,6 +251,16 @@ def test_torrent_failure_falls_back_to_https(lichess, tmp_path, fake_aria2c, mon
     assert manifest(dest, "2013-01")["games"] == 300
 
 
+def test_stale_torrent_falls_back_to_https(lichess, tmp_path, fake_aria2c, monkeypatch):
+    monkeypatch.setenv("FAKE_ARIA2_STALE", "1")  # 2018-03: the .torrent is of the file before a republish
+    lichess.add_month("2013-01", 300)
+    dest, work = tmp_path / "lake", tmp_path / "work"
+    assert run(lichess, dest, work, "--download-method", "torrent") == 0
+    dl = json.loads((work / "runs.jsonl").read_text())["download"]
+    assert dl["method"] == "http" and "sha256" in dl["torrent_error"]
+    assert manifest(dest, "2013-01")["games"] == 300
+
+
 def test_auto_uses_https_without_aria2c(monkeypatch):
     from lichess_ingest import source
     monkeypatch.setattr(source.shutil, "which", lambda _: None)
