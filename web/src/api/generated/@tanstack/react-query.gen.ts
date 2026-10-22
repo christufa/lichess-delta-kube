@@ -3,8 +3,8 @@
 import { type DefaultError, queryOptions } from '@tanstack/react-query';
 
 import { client } from '../client.gen';
-import { getMonths, getOpenings, getRatingDistribution, getSummary, healthz, type Options, readyz } from '../sdk.gen';
-import type { GetMonthsData, GetMonthsError, GetMonthsResponse, GetOpeningsData, GetOpeningsError, GetOpeningsResponse, GetRatingDistributionData, GetRatingDistributionError, GetRatingDistributionResponse, GetSummaryData, GetSummaryError, GetSummaryResponse, HealthzData, HealthzResponse, ReadyzData, ReadyzError, ReadyzResponse } from '../types.gen';
+import { getExplorer, getMonths, getOpenings, getRatingDistribution, getSummary, healthz, type Options, readyz } from '../sdk.gen';
+import type { GetExplorerData, GetExplorerError, GetExplorerResponse, GetMonthsData, GetMonthsError, GetMonthsResponse, GetOpeningsData, GetOpeningsError, GetOpeningsResponse, GetRatingDistributionData, GetRatingDistributionError, GetRatingDistributionResponse, GetSummaryData, GetSummaryError, GetSummaryResponse, HealthzData, HealthzResponse, ReadyzData, ReadyzError, ReadyzResponse } from '../types.gen';
 
 export type QueryKey<TOptions extends Options> = [
     Pick<TOptions, 'baseUrl' | 'body' | 'headers' | 'path' | 'query'> & {
@@ -38,6 +38,28 @@ const createQueryKey = <TOptions extends Options>(id: string, options?: TOptions
     }
     return [params];
 };
+
+export const getExplorerQueryKey = (options?: Options<GetExplorerData>) => createQueryKey('getExplorer', options);
+
+/**
+ * Get Explorer
+ *
+ * Opening explorer: the moves played from a position (first 16 plies), with results, the
+ * average rating and the highest-rated example game. Move orders reaching the same position
+ * count together.
+ */
+export const getExplorerOptions = (options?: Options<GetExplorerData>) => queryOptions<GetExplorerResponse, GetExplorerError, GetExplorerResponse, ReturnType<typeof getExplorerQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await getExplorer({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: getExplorerQueryKey(options)
+});
 
 export const getMonthsQueryKey = (options?: Options<GetMonthsData>) => createQueryKey('getMonths', options);
 

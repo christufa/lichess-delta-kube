@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { GetMonthsData, GetMonthsErrors, GetMonthsResponses, GetOpeningsData, GetOpeningsErrors, GetOpeningsResponses, GetRatingDistributionData, GetRatingDistributionErrors, GetRatingDistributionResponses, GetSummaryData, GetSummaryErrors, GetSummaryResponses, HealthzData, HealthzResponses, ReadyzData, ReadyzErrors, ReadyzResponses } from './types.gen';
+import type { GetExplorerData, GetExplorerErrors, GetExplorerResponses, GetMonthsData, GetMonthsErrors, GetMonthsResponses, GetOpeningsData, GetOpeningsErrors, GetOpeningsResponses, GetRatingDistributionData, GetRatingDistributionErrors, GetRatingDistributionResponses, GetSummaryData, GetSummaryErrors, GetSummaryResponses, HealthzData, HealthzResponses, ReadyzData, ReadyzErrors, ReadyzResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -17,6 +17,15 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
      */
     meta?: keyof ClientMeta extends never ? Record<string, unknown> : ClientMeta;
 };
+
+/**
+ * Get Explorer
+ *
+ * Opening explorer: the moves played from a position (first 16 plies), with results, the
+ * average rating and the highest-rated example game. Move orders reaching the same position
+ * count together.
+ */
+export const getExplorer = <ThrowOnError extends boolean = false>(options?: Options<GetExplorerData, ThrowOnError>): RequestResult<GetExplorerResponses, GetExplorerErrors, ThrowOnError> => (options?.client ?? client).get<GetExplorerResponses, GetExplorerErrors, ThrowOnError>({ url: '/api/v1/explorer', ...options });
 
 /**
  * Get Months

@@ -53,6 +53,7 @@ below.
 | [`GET /api/v1/summary`](https://chess.generops.dev/api/v1/summary?from=2026-08&to=2026-09&speed=all) | `from`, `to` (YYYY-MM, required) · `speed` (repeatable: `all`, `ultrabullet`, `bullet`, `blitz`, `rapid`, `classical`, `correspondence`; empty = all of them) | per month and speed: games, players, white wins, draws, black wins, unfinished, bot games, average rating |
 | [`GET /api/v1/rating-distribution`](https://chess.generops.dev/api/v1/rating-distribution?month=2026-09&speed=blitz) | `month` (required) · `speed` (repeatable) | per speed and 50-point rating bucket: player-games and players |
 | [`GET /api/v1/openings`](https://chess.generops.dev/api/v1/openings?from=2026-09&to=2026-09&speed=blitz&limit=10) | `from`, `to` (required) · `speed` · `rating_band` (0–4000, a multiple of 200) · `limit` (1–100, default 20) | the most played openings over the range, with results, plus the selection's total games |
+| [`GET /api/v1/explorer`](https://chess.generops.dev/api/v1/explorer) | `fen` (default: the start) · `from`, `to` (optional) · `speed` · `rating_band` (0, 1200, 1600, 2000, 2400) | opening explorer: the moves played from a position (first 16 plies, transpositions merged), with results, average rating and the top-rated example game |
 | [`GET /api/docs`](https://chess.generops.dev/api/docs) | none | interactive documentation (Swagger UI) |
 | [`GET /api/openapi.json`](https://chess.generops.dev/api/openapi.json) | none | the OpenAPI spec: the contract the dashboard's client is generated from |
 

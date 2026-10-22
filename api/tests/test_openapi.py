@@ -17,6 +17,8 @@ DASHBOARD_CALLS = [
     ("/api/v1/summary", {"from": "2015-11", "to": "2015-12"}),
     ("/api/v1/rating-distribution", {"month": "2015-12"}),
     ("/api/v1/openings", {"from": "2015-11", "to": "2015-12", "speed": "blitz"}),
+    ("/api/v1/explorer", {}),
+    ("/api/v1/explorer", {"from": "2015-11", "to": "2015-12", "speed": "blitz", "rating_band": 1600}),
 ]
 
 

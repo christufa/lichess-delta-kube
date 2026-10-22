@@ -5,6 +5,96 @@ export type ClientOptions = {
 };
 
 /**
+ * Explorer
+ */
+export type Explorer = {
+    /**
+     * From Month
+     *
+     * null = from the first month with data
+     */
+    from_month: string | null;
+    /**
+     * Games
+     *
+     * Games that continued from this position (sum over the moves)
+     */
+    games: number;
+    /**
+     * Moves
+     *
+     * Moves played from the position at least 5 times in a month (first 16 plies), most played first
+     */
+    moves: Array<ExplorerMove>;
+    /**
+     * Position
+     *
+     * The position looked up: the first three FEN fields (placement, side to move, castling)
+     */
+    position: string;
+    /**
+     * null = every band
+     */
+    rating_band: RatingBand | null;
+    /**
+     * null = every speed
+     */
+    speed: Speed | null;
+    /**
+     * To Month
+     *
+     * null = to the last month with data
+     */
+    to_month: string | null;
+};
+
+/**
+ * ExplorerMove
+ */
+export type ExplorerMove = {
+    /**
+     * Avg Rating
+     *
+     * Mean of both players' ratings over the rated games
+     */
+    avg_rating: number | null;
+    /**
+     * Black Wins
+     */
+    black_wins: number;
+    /**
+     * Draws
+     */
+    draws: number;
+    /**
+     * Example Game Id
+     *
+     * The highest-rated game with this move: https://lichess.org/<id>
+     */
+    example_game_id: string | null;
+    /**
+     * Example Rating
+     *
+     * That game's average rating
+     */
+    example_rating: number | null;
+    /**
+     * Games
+     */
+    games: number;
+    /**
+     * Move
+     *
+     * The move in SAN, as played
+     */
+    move: string;
+    /**
+     * White Wins
+     */
+    white_wins: number;
+};
+
+/**
  * HTTPValidationError
  */
 export type HttpValidationError = {
@@ -125,6 +215,13 @@ export type Problem = {
      */
     detail: string;
 };
+
+/**
+ * RatingBand
+ *
+ * The explorer's rating bands: lower bound of the players' average rating (0 = under 1200).
+ */
+export type RatingBand = 0 | 1200 | 1600 | 2000 | 2400;
 
 /**
  * RatingBucket
@@ -299,6 +396,74 @@ export type ValidationError = {
      */
     type: string;
 };
+
+export type GetExplorerData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Fen
+         *
+         * The position; default: the start
+         */
+        fen?: string;
+        /**
+         * From
+         *
+         * Omit for all
+         */
+        from?: string | null;
+        /**
+         * To
+         *
+         * Omit for all
+         */
+        to?: string | null;
+        /**
+         * Speed
+         *
+         * Omit for every speed
+         */
+        speed?: Speed | null;
+        /**
+         * Rating Band
+         *
+         * Players' average rating band: 0 = under 1200, 1200, 1600, 2000, 2400+; omit for all
+         */
+        rating_band?: RatingBand | null;
+    };
+    url: '/api/v1/explorer';
+};
+
+export type GetExplorerErrors = {
+    /**
+     * Invalid range
+     */
+    400: Problem;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+    /**
+     * Too many requests from this IP; see Retry-After
+     */
+    429: Problem;
+    /**
+     * The data store is unavailable; retry later
+     */
+    503: Problem;
+};
+
+export type GetExplorerError = GetExplorerErrors[keyof GetExplorerErrors];
+
+export type GetExplorerResponses = {
+    /**
+     * Successful Response
+     */
+    200: Explorer;
+};
+
+export type GetExplorerResponse = GetExplorerResponses[keyof GetExplorerResponses];
 
 export type GetMonthsData = {
     body?: never;

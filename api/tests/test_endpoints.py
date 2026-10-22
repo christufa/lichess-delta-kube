@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 from fastapi.testclient import TestClient
 
 from chess_api.app import create_app
@@ -146,3 +147,61 @@ def test_internal_costs_is_not_public(client, fake):
     assert not fake.calls
     assert client.get("/internal/v1/costs", params={"months": 0}).status_code == 422
     assert "/internal/v1/costs" not in client.get("/api/openapi.json").json()["paths"]
+
+
+START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+
+
+def test_explorer_start_position_every_month(client):
+    r = client.get("/api/v1/explorer")  # the start position by default
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["position"] == "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq"
+    assert body["from_month"] is None and body["games"] == 43
+    moves = {m["move"]: m for m in body["moves"]}
+    assert [m["move"] for m in body["moves"]] == ["e4", "d4", "Nf3"]  # most played first
+    e4 = moves["e4"]
+    assert (e4["games"], e4["white_wins"], e4["draws"], e4["black_wins"]) == (24, 12, 2, 10)
+    assert e4["avg_rating"] == pytest.approx((17000 + 8400 + 11900) / 23)
+    assert (e4["example_game_id"], e4["example_rating"]) == ("dddddddd", 1900.0)  # the highest rated
+    assert moves["Nf3"]["avg_rating"] is None and moves["Nf3"]["example_game_id"] is None  # unrated
+
+
+def test_explorer_filters(client):
+    r = client.get("/api/v1/explorer", params={"fen": START_FEN, "from": "2015-12", "to": "2015-12",
+                                               "speed": "blitz", "rating_band": 2400})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert [(m["move"], m["games"]) for m in body["moves"]] == [("d4", 9)]
+    assert body["speed"] == "blitz" and body["rating_band"] == 2400 and body["from_month"] == "2015-12"
+
+
+def test_explorer_ignores_en_passant_and_counters(client):
+    # 1. Nf3 d5 2. d4 and 1. d4 d5 2. Nf3 are one position, whatever the FEN's last fields say.
+    for fen in ("rnbqkbnr/ppp1pppp/8/3p4/3P4/5N2/PPP1PPPP/RNBQKB1R b KQkq - 1 2",
+                "rnbqkbnr/ppp1pppp/8/3p4/3P4/5N2/PPP1PPPP/RNBQKB1R b KQkq d3 0 2",
+                "rnbqkbnr/ppp1pppp/8/3p4/3P4/5N2/PPP1PPPP/RNBQKB1R b KQkq"):
+        body = client.get("/api/v1/explorer", params={"fen": fen}).json()
+        assert [(m["move"], m["games"]) for m in body["moves"]] == [("Nf6", 12)], fen
+
+
+def test_explorer_unknown_position_is_empty(client):
+    body = client.get("/api/v1/explorer", params={"fen": "8/8/8/8/8/8/8/K6k w - - 0 1"}).json()
+    assert body["games"] == 0 and body["moves"] == []
+
+
+@pytest.mark.parametrize("params", [
+    {"fen": "not a fen"},
+    {"fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR x KQkq"},
+    {"fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w "},
+    {"fen": START_FEN + "' OR 1=1 --"},
+    {"rating_band": 1800},
+    {"from": "2015-13"},
+])
+def test_explorer_rejects_bad_input(client, fake, params):
+    assert client.get("/api/v1/explorer", params=params).status_code == 422
+    assert not fake.calls
+
+
+def test_explorer_range(client):
+    assert client.get("/api/v1/explorer", params={"from": "2015-12", "to": "2015-11"}).status_code == 400

@@ -18,6 +18,9 @@ CREATE TABLE monthly_summary (month TEXT, speed TEXT, games INT, players INT, wh
 CREATE TABLE openings (month TEXT, speed TEXT, eco TEXT, opening TEXT, rating_band INT, games INT,
                        white_wins INT, draws INT, black_wins INT, unfinished INT);
 CREATE TABLE rating_distribution (month TEXT, speed TEXT, rating_bucket INT, player_games INT, players INT);
+CREATE TABLE position_moves (month TEXT, position TEXT, move TEXT, speed TEXT, rating_band INT, games INT,
+                             white_wins INT, draws INT, black_wins INT, rated_games INT, rating_sum REAL,
+                             example_game_id TEXT, example_rating REAL);
 CREATE TABLE azure_cost (month TEXT, usage_date TEXT, resource_group TEXT, service_name TEXT, resource_type TEXT,
                          cost REAL, currency TEXT);
 """
@@ -59,7 +62,33 @@ COSTS = [
     ("2026-10", "2026-10-19", "rg-b", "Azure Kubernetes Service", "managedclusters", 2.0, "USD"),
     ("2026-10", "2026-10-20", "rg-b", "Azure Kubernetes Service", "managedclusters", 3.0, "USD"),
 ]
+START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq"
+AFTER_NF3_D5_D4 = "rnbqkbnr/ppp1pppp/8/3p4/3P4/5N2/PPP1PPPP/RNBQKB1R b KQkq"  # = 1. d4 d5 2. Nf3
+POSITION_MOVES = [
+    # month, position, move, speed, rating_band, games, white, draws, black, rated, rating_sum, example, ex_rating
+    ("2015-11", START, "e4", "blitz", 1600, 10, 5, 1, 4, 10, 17000.0, "aaaaaaaa", 1800.0),
+    ("2015-11", START, "e4", "bullet", 1200, 6, 3, 0, 3, 6, 8400.0, "bbbbbbbb", 1500.0),
+    ("2015-11", START, "d4", "blitz", 2000, 5, 3, 1, 1, 5, 10500.0, "cccccccc", 2300.0),
+    ("2015-12", START, "e4", "blitz", 1600, 8, 4, 1, 3, 7, 11900.0, "dddddddd", 1900.0),
+    ("2015-12", START, "d4", "blitz", 2400, 9, 4, 2, 3, 9, 22500.0, "eeeeeeee", 2600.0),
+    ("2015-12", START, "Nf3", "rapid", None, 5, 2, 2, 0, 0, 0.0, None, None),
+    ("2015-12", AFTER_NF3_D5_D4, "Nf6", "blitz", 1600, 12, 6, 6, 0, 11, 18700.0, "ffffffff", 1750.0),
+]
 ALLOWED_OUTSIDE_GOLD = {"lake.ops.azure_cost"}  # the internal cost endpoint's one table
+
+
+class MaxBy:
+    """Trino's max_by(value, key) for SQLite: the value of the row with the largest key."""
+
+    def __init__(self):
+        self.best = None
+
+    def step(self, value, key):
+        if key is not None and (self.best is None or key > self.best[0]):
+            self.best = (key, value)
+
+    def finalize(self):
+        return self.best[1] if self.best else None
 
 
 class FakeTrino:
@@ -73,6 +102,8 @@ class FakeTrino:
         self.conn.executemany("INSERT INTO openings VALUES (?,?,?,?,?,?,?,?,?,?)", OPENINGS)
         self.conn.executemany("INSERT INTO rating_distribution VALUES (?,?,?,?,?)", RATINGS)
         self.conn.executemany("INSERT INTO azure_cost VALUES (?,?,?,?,?,?,?)", COSTS)
+        self.conn.executemany("INSERT INTO position_moves VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", POSITION_MOVES)
+        self.conn.create_aggregate("max_by", 2, MaxBy)  # Trino's max_by(value, key)
         self.lock = threading.Lock()
         self.calls: list[tuple[str, list]] = []
         self.down = False

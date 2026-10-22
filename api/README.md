@@ -36,6 +36,7 @@ Public routes are under `/api` (the path cloudflared will forward from
 | `GET /api/v1/summary` | `from`, `to` (YYYY-MM), `speed` (repeatable, incl. `all`) | games, players, results, bot games, avg rating per month × speed |
 | `GET /api/v1/rating-distribution` | `month`, `speed` (repeatable) | player-games and players per 50-point bucket |
 | `GET /api/v1/openings` | `from`, `to`, `speed`, `rating_band` (multiple of 200), `limit` (≤ 100) | top openings over the range, with results and the selection's total |
+| `GET /api/v1/explorer` | `fen` (default: start), `from`, `to` (optional), `speed`, `rating_band` (0/1200/1600/2000/2400) | moves from a position with results, average rating, top-rated example game (`lake.gold.position_moves`; key = first three FEN fields) |
 
 Errors: 400 (`from` after `to`), 422 (invalid parameter), 429, 503 (Trino unavailable);
 bodies are `{"detail": ...}`.

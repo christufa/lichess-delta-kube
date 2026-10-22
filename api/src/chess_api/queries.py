@@ -10,9 +10,12 @@ from __future__ import annotations
 from .models import (
     CostRow,
     Costs,
+    Explorer,
+    ExplorerMove,
     Months,
     Opening,
     Openings,
+    RatingBand,
     RatingBucket,
     RatingDistribution,
     Speed,
@@ -26,6 +29,7 @@ SUMMARY = "lake.gold.monthly_summary"
 OPENINGS = "lake.gold.openings"
 RATINGS = "lake.gold.rating_distribution"
 COSTS = "lake.ops.azure_cost"
+POSITION_MOVES = "lake.gold.position_moves"
 
 
 def months(db: QueryRunner) -> Months:
@@ -122,4 +126,57 @@ def costs(db: QueryRunner, from_month: str) -> Costs:
         currency=currencies.pop() if len(currencies) == 1 else None,
         rows=[CostRow(date=str(r["usage_date"]), service=r["service_name"], cost=round(r["cost"] or 0.0, 4))
               for r in rows],
+    )
+
+
+def position_key(fen: str) -> str:
+    """The explorer's key for a FEN: placement, side to move, castling (lichess_spark.explorer)."""
+    return " ".join(fen.split()[:3])
+
+
+def explorer(
+    db: QueryRunner,
+    fen: str,
+    from_month: str | None,
+    to_month: str | None,
+    speed: Speed | None,
+    rating_band: RatingBand | None,
+) -> Explorer:
+    position = position_key(fen)
+    where, params = "position = ?", [position]
+    if from_month is not None:
+        where += " AND month >= ?"
+        params.append(from_month)
+    if to_month is not None:
+        where += " AND month <= ?"
+        params.append(to_month)
+    if speed is not None:
+        where += " AND speed = ?"
+        params.append(speed.value)
+    if rating_band is not None:
+        where += " AND rating_band = ?"
+        params.append(int(rating_band))
+    # One scan: bucket(position) + the sort by position make it a handful of rows per month.
+    rows = db.query(
+        f"""
+        SELECT move, sum(games) AS games, sum(white_wins) AS white_wins, sum(draws) AS draws,
+               sum(black_wins) AS black_wins,
+               sum(rating_sum) / nullif(sum(rated_games), 0) AS avg_rating,
+               max_by(example_game_id, example_rating) AS example_game_id,
+               max(example_rating) AS example_rating
+        FROM {POSITION_MOVES}
+        WHERE {where}
+        GROUP BY move
+        ORDER BY games DESC, move""",
+        params,
+    )
+    moves = [ExplorerMove(**r) for r in rows]
+    return Explorer(
+        position=position,
+        from_month=from_month,
+        to_month=to_month,
+        speed=speed,
+        rating_band=rating_band,
+        games=sum(m.games for m in moves),
+        moves=moves,
     )
