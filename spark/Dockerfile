@@ -8,6 +8,7 @@
 #   default            lichess-spark     jobs (spark-job) and notebook executors
 #   --target notebook  lichess-notebook  the same + JupyterLab (jupyter workflow)
 ARG SPARK_IMAGE=apache/spark:4.1.3-scala2.13-java21-python3-ubuntu
+FROM ghcr.io/astral-sh/uv:0.13.4 AS uv
 FROM ${SPARK_IMAGE} AS job
 
 # renovate: datasource=maven depName=org.apache.iceberg:iceberg-spark-runtime-4.1_2.13
@@ -27,14 +28,29 @@ ADD ${MAVEN}/org/apache/iceberg/iceberg-azure-bundle/${ICEBERG_VERSION}/iceberg-
 ADD ${MAVEN}/org/apache/hadoop/hadoop-azure/${HADOOP_VERSION}/hadoop-azure-${HADOOP_VERSION}.jar /opt/spark/jars/
 RUN chmod 0644 /opt/spark/jars/*.jar
 
-# pandas + pyarrow on every node: toPandas() with Arrow and pandas UDFs.
-ENV PIP_BREAK_SYSTEM_PACKAGES=1 PIP_NO_CACHE_DIR=1 PIP_ROOT_USER_ACTION=ignore PIP_DISABLE_PIP_VERSION_CHECK=1
-RUN (python3 -m pip --version >/dev/null 2>&1 || \
-      (apt-get update && apt-get install -y --no-install-recommends python3-pip && rm -rf /var/lib/apt/lists/*)) \
- && python3 -m pip install "pandas>=2.2,<3" "pyarrow>=18"
+# Python for PySpark (the driver, the executors and the notebook kernel all run this image):
+# CPython 3.12 from python-build-standalone, installed by uv into /opt/python. The base image is
+# Ubuntu 22.04, whose own python3 is 3.10; it stays for apt, ours comes first on PATH and is the
+# one Spark runs (PYSPARK_PYTHON). uv is mounted for the build only, not left in the image.
+ARG PYTHON_VERSION=3.12.12
+ENV UV_PYTHON_INSTALL_DIR=/opt/python UV_NO_CACHE=1
+RUN --mount=from=uv,source=/uv,target=/usr/local/bin/uv \
+    uv python install "$PYTHON_VERSION" \
+ && ln -s "$(dirname "$(dirname "$(uv python find "$PYTHON_VERSION")")")" /opt/py \
+ && /opt/py/bin/python3 --version
+ENV PATH=/opt/py/bin:$PATH \
+    PYSPARK_PYTHON=/opt/py/bin/python3 \
+    PYSPARK_DRIVER_PYTHON=/opt/py/bin/python3
 
-# Our code: the session helper as an importable package, jobs as plain scripts.
-COPY lichess_spark /usr/lib/python3/dist-packages/lichess_spark
+# pandas + pyarrow on every node: toPandas() with Arrow and pandas UDFs.
+RUN --mount=from=uv,source=/uv,target=/usr/local/bin/uv \
+    uv pip install --python "$(readlink -f /opt/py/bin/python3)" --system --break-system-packages \
+      "pandas>=2.2,<3" "pyarrow>=18"
+
+# Our code: the session helper as an importable package (a .pth file puts /opt/lichess/python on
+# the interpreter's path), jobs as plain scripts.
+COPY lichess_spark /opt/lichess/python/lichess_spark
+RUN echo /opt/lichess/python > "$(/opt/py/bin/python3 -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')/lichess.pth"
 COPY jobs /opt/lichess/jobs
 COPY tests /opt/lichess/tests
 COPY conf /opt/lichess/conf
@@ -44,11 +60,14 @@ USER spark
 # --- notebook: JupyterLab whose kernel is a Spark driver (lichess_spark.notebook) ---
 FROM job AS notebook
 USER root
-RUN python3 -m pip install "jupyterlab>=4.4,<5" ipykernel "matplotlib>=3.9" \
+# pillow>=13 (via matplotlib): 12.x has critical decoder/encoder vulnerabilities (2026-10), and
+# 13 needs Python >= 3.11, one reason the image runs 3.12.
+RUN --mount=from=uv,source=/uv,target=/usr/local/bin/uv \
+    uv pip install --python "$(readlink -f /opt/py/bin/python3)" --system --break-system-packages \
+      "jupyterlab>=4.4,<5" ipykernel "matplotlib>=3.9" "pillow>=13" \
  && ln -s "$(ls /opt/spark/python/lib/py4j-*-src.zip | head -1)" /opt/spark/python/lib/py4j-src.zip
 # pyspark from the Spark install (same version as the executors), importable by the kernel.
-ENV PYTHONPATH=/opt/spark/python:/opt/spark/python/lib/py4j-src.zip \
-    PYSPARK_PYTHON=python3
+ENV PYTHONPATH=/opt/spark/python:/opt/spark/python/lib/py4j-src.zip
 COPY notebooks /opt/lichess/notebooks
 COPY bin/start-jupyter.sh /opt/lichess/bin/start-jupyter.sh
 # Built from Windows (az acr build uploads the working copy), the script arrives without
