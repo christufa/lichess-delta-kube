@@ -110,7 +110,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install pytest
+      - run: pip install pytest "chess==1.11.2"  # chess: lichess_spark.explorer
       - name: pytest (no Spark needed)
         run: PYTHONPATH=. pytest -q
 

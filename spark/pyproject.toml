@@ -6,7 +6,7 @@ version = "0.1.0"
 requires-python = ">=3.10"
 
 [project.optional-dependencies]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "chess==1.11.2"]  # chess: lichess_spark.explorer (in the image too)
 
 [tool.setuptools]
 packages = ["lichess_spark"]

@@ -62,6 +62,7 @@ jobs:
               docker run --rm --entrypoint /opt/spark/bin/spark-submit "$IMAGE" --master 'local[2]' /opt/lichess/tests/local_smoke.py
               docker run --rm --entrypoint /opt/spark/bin/spark-submit "$IMAGE" --master 'local[2]' /opt/lichess/tests/local_raw.py
               docker run --rm --entrypoint /opt/spark/bin/spark-submit "$IMAGE" --master 'local[2]' /opt/lichess/tests/local_curated.py
+              docker run --rm --entrypoint /opt/spark/bin/spark-submit "$IMAGE" --master 'local[2]' /opt/lichess/tests/local_explorer.py
               docker run --rm --entrypoint /opt/spark/bin/spark-submit "$IMAGE" --master 'local[2]' /opt/lichess/tests/local_maintenance.py
               docker run --rm --entrypoint /opt/spark/bin/spark-submit "$IMAGE" --master 'local[2]' /opt/lichess/tests/local_catalog_recovery.py
               docker run --rm --entrypoint /opt/spark/bin/spark-submit "$IMAGE" --master 'local[2]' /opt/lichess/tests/local_cost.py
