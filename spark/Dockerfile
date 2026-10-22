@@ -44,7 +44,8 @@ USER spark
 # --- notebook: JupyterLab whose kernel is a Spark driver (lichess_spark.notebook) ---
 FROM job AS notebook
 USER root
-RUN python3 -m pip install "jupyterlab>=4.4,<5" ipykernel "matplotlib>=3.9" \
+# pillow>=13 (via matplotlib): 12.x has a JPEG decoder vulnerability (Trivy, 2026-10).
+RUN python3 -m pip install "jupyterlab>=4.4,<5" ipykernel "matplotlib>=3.9" "pillow>=13" \
  && ln -s "$(ls /opt/spark/python/lib/py4j-*-src.zip | head -1)" /opt/spark/python/lib/py4j-src.zip
 # pyspark from the Spark install (same version as the executors), importable by the kernel.
 ENV PYTHONPATH=/opt/spark/python:/opt/spark/python/lib/py4j-src.zip \
