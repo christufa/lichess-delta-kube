@@ -1,5 +1,5 @@
-# Written by .github/workflows/images.yml for main commit 8519916e25fdaa2a7f08b86ad927c80fe3de87cc. Don't edit.
+# Written by .github/workflows/images.yml for main commit 3a16c4ceb85efe1e9cef921d905b06c3d58f4c63. Don't edit.
 # Helm values for deploy/charts/chess-chat (deploy/README.md, "Rolling out new builds").
 image:
-  digest: sha256:7d98c8d60ca0a549b56c28db8c1729c0dbee2bc49e9730d6e2b60a55dd1da4cf
-  commit: 8519916e25fdaa2a7f08b86ad927c80fe3de87cc
+  digest: sha256:d773de8af2e0651a1a44c34855daa8aecf70ae3caecf2b73e4ba6c3a79d63dc1
+  commit: 3a16c4ceb85efe1e9cef921d905b06c3d58f4c63
