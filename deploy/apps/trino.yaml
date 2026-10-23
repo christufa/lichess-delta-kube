@@ -54,6 +54,22 @@ spec:
                 azure.workload.identity/client-id: '{{ index .metadata.annotations "lichess.generops.dev/trino-client-id" }}'
             server:
               workers: 0
+              # The chart's ScaledObject on trino-worker (see the header). Enabling it is also
+              # what makes the chart render the worker Deployment at all with workers: 0.
+              keda:
+                enabled: true
+                minReplicaCount: 0
+                maxReplicaCount: 2
+                pollingInterval: 30
+                cooldownPeriod: 900
+                triggers:
+                  - type: prometheus
+                    authenticationRef: { name: managed-prometheus }
+                    metadata:
+                      serverAddress: '{{ index .metadata.annotations "lichess.generops.dev/prometheus-url" }}'
+                      query: sum(rate(container_cpu_usage_seconds_total{namespace="trino", container=~"trino-coordinator|trino-worker"}[2m]))
+                      threshold: "3"
+                      activationThreshold: "1.5"
               config:
                 https:
                   enabled: true
@@ -215,7 +231,7 @@ spec:
                           apiVersion: generators.external-secrets.io/v1alpha1
                           kind: Password
                           name: trino-shared-secret
-              # Worker autoscaling (KEDA): see the header.
+              # How KEDA signs in to Managed Prometheus for server.keda's trigger.
               - |
                 apiVersion: keda.sh/v1alpha1
                 kind: TriggerAuthentication
@@ -225,25 +241,6 @@ spec:
                   podIdentity:
                     provider: azure-workload
                     identityId: '{{ index .metadata.annotations "lichess.generops.dev/keda-client-id" }}'
-              - |
-                apiVersion: keda.sh/v1alpha1
-                kind: ScaledObject
-                metadata:
-                  name: trino-worker
-                spec:
-                  scaleTargetRef: { name: trino-worker }
-                  minReplicaCount: 0
-                  maxReplicaCount: 2
-                  pollingInterval: 30
-                  cooldownPeriod: 900
-                  triggers:
-                    - type: prometheus
-                      authenticationRef: { name: managed-prometheus }
-                      metadata:
-                        serverAddress: '{{ index .metadata.annotations "lichess.generops.dev/prometheus-url" }}'
-                        query: sum(rate(container_cpu_usage_seconds_total{namespace="trino", container=~"trino-coordinator|trino-worker"}[2m]))
-                        threshold: "3"
-                        activationThreshold: "1.5"
       destination:
         server: '{{ .server }}'
         namespace: trino
