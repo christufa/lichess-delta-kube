@@ -86,6 +86,30 @@ resource "azurerm_federated_identity_credential" "grafana" {
   subject                   = "system:serviceaccount:monitoring:grafana"
 }
 
+# --- KEDA's identity: read the workspace, for Trino worker autoscaling --------------------
+# The KEDA add-on's operator (kube-system/keda-operator) queries Managed Prometheus as this
+# identity (TriggerAuthentication, podIdentity azure-workload) and nothing else.
+resource "azurerm_user_assigned_identity" "keda" {
+  name                = "id-${var.project}-keda"
+  resource_group_name = azurerm_resource_group.compute.name
+  location            = azurerm_resource_group.compute.location
+  tags                = local.tags
+}
+
+resource "azurerm_role_assignment" "keda_metrics" {
+  scope                = azurerm_monitor_workspace.main.id
+  role_definition_name = "Monitoring Data Reader"
+  principal_id         = azurerm_user_assigned_identity.keda.principal_id
+}
+
+resource "azurerm_federated_identity_credential" "keda" {
+  name                      = "aks-kube-system-keda-operator"
+  user_assigned_identity_id = azurerm_user_assigned_identity.keda.id
+  audience                  = ["api://AzureADTokenExchange"]
+  issuer                    = azurerm_kubernetes_cluster.main.oidc_issuer_url
+  subject                   = "system:serviceaccount:kube-system:keda-operator"
+}
+
 # --- Alerts -------------------------------------------------------------------------------
 resource "azurerm_monitor_action_group" "owner" {
   name                = "ag-${var.project}-owner"

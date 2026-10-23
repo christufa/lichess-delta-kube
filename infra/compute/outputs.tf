@@ -93,3 +93,8 @@ output "chat_identity_principal_id" {
   description = "Its service principal: infra/gitops assigns it the MCP app's role Lakehouse.Query"
   value       = azurerm_user_assigned_identity.chat.principal_id
 }
+
+output "keda_identity_client_id" {
+  description = "Client ID of KEDA's identity (reads Managed Prometheus for Trino worker autoscaling)"
+  value       = azurerm_user_assigned_identity.keda.client_id
+}

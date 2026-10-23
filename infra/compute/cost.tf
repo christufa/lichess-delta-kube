@@ -12,15 +12,11 @@ locals {
   ]
 }
 
-data "azurerm_resource_group" "cost" {
-  for_each   = toset(local.cost_resource_groups)
-  name       = each.value
-  depends_on = [azurerm_kubernetes_cluster.main]
-}
-
+# Scopes built from the names, not read with a data source: a data source that depends on the
+# cluster is deferred whenever the cluster changes, which would force these to be replaced.
 resource "azurerm_role_assignment" "jobs_cost" {
-  for_each             = data.azurerm_resource_group.cost
-  scope                = each.value.id
+  for_each             = toset(local.cost_resource_groups)
+  scope                = "/subscriptions/${data.azurerm_client_config.current.subscription_id}/resourceGroups/${each.value}"
   role_definition_name = "Cost Management Reader"
   principal_id         = azurerm_user_assigned_identity.jobs.principal_id
 }

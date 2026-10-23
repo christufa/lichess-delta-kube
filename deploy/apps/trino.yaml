@@ -9,9 +9,17 @@
 #   Lakekeeper grants it describe+select only. Lake files: read with id-lichess-trino
 #   (workload identity, Storage Blob Data Reader). The catalog is read_only in Trino too.
 # - Coordinator on the system pool also runs queries (include-coordinator), so small queries
-#   need no spot node. Workers (spot, 0 by default) for big scans:
-#     kubectl scale deploy -n trino trino-worker --replicas=2
-# ApplicationSet so the client ID and the AKS OIDC issuer come from the cluster facts.
+#   need no spot node. Workers (spot, 0 when idle) for big scans, scaled by KEDA (the AKS
+#   add-on) on Trino's CPU, read from Managed Prometheus with workload identity
+#   (id-<project>-keda, Monitoring Data Reader):
+#   - The metric is coordinator + workers together, so adding a worker doesn't drop it and
+#     scale the worker straight back down.
+#   - 0 → 1 once Trino has used more than 1.5 cores for the last 2 minutes (idle is ~0.03; the
+#     coordinator's request is 0.5). More workers above 3 cores each, at most 2.
+#   - Back to 0 after 15 minutes under the activation threshold. A spot node takes a few
+#     minutes to come up, so a query that's already running finishes on the coordinator.
+# ApplicationSet so the client IDs, the AKS OIDC issuer and the Prometheus URL come from the
+# cluster facts.
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
@@ -207,6 +215,35 @@ spec:
                           apiVersion: generators.external-secrets.io/v1alpha1
                           kind: Password
                           name: trino-shared-secret
+              # Worker autoscaling (KEDA): see the header.
+              - |
+                apiVersion: keda.sh/v1alpha1
+                kind: TriggerAuthentication
+                metadata:
+                  name: managed-prometheus
+                spec:
+                  podIdentity:
+                    provider: azure-workload
+                    identityId: '{{ index .metadata.annotations "lichess.generops.dev/keda-client-id" }}'
+              - |
+                apiVersion: keda.sh/v1alpha1
+                kind: ScaledObject
+                metadata:
+                  name: trino-worker
+                spec:
+                  scaleTargetRef: { name: trino-worker }
+                  minReplicaCount: 0
+                  maxReplicaCount: 2
+                  pollingInterval: 30
+                  cooldownPeriod: 900
+                  triggers:
+                    - type: prometheus
+                      authenticationRef: { name: managed-prometheus }
+                      metadata:
+                        serverAddress: '{{ index .metadata.annotations "lichess.generops.dev/prometheus-url" }}'
+                        query: sum(rate(container_cpu_usage_seconds_total{namespace="trino", container=~"trino-coordinator|trino-worker"}[2m]))
+                        threshold: "3"
+                        activationThreshold: "1.5"
       destination:
         server: '{{ .server }}'
         namespace: trino
@@ -214,7 +251,7 @@ spec:
         - group: apps
           kind: Deployment
           name: trino-worker
-          jsonPointers: [/spec/replicas] # scaled by hand (or later by KEDA)
+          jsonPointers: [/spec/replicas] # scaled by KEDA
       syncPolicy:
         automated:
           prune: true
@@ -222,6 +259,7 @@ spec:
         syncOptions:
           - CreateNamespace=true
           - RespectIgnoreDifferences=true
+          - SkipDryRunOnMissingResource=true # the KEDA CRDs come with the add-on (infra/compute)
         managedNamespaceMetadata:
           labels: # Pod Security Admission (#62): only pods meeting "restricted" may run here
             pod-security.kubernetes.io/enforce: restricted
