@@ -72,6 +72,15 @@ spec:
             sparkConf:
               spark.sql.adaptive.enabled: "true"
               spark.serializer: org.apache.spark.serializer.KryoSerializer
+            # The driver signs in to Lakekeeper with a service account token it reads once at
+            # start (lichess_spark.session); the pod's default one lasts 1 h, and Iceberg can't
+            # refresh it (Lakekeeper has no OAuth endpoint), so longer jobs failed after ~55 min.
+            # This one lasts 24 h, with the same audiences.
+            volumes:
+              - name: catalog-token
+                projected:
+                  sources:
+                    - serviceAccountToken: { path: token, expirationSeconds: 86400 }
             driver:
               serviceAccount: lichess-jobs
               # Pod Security "restricted" (#62): the image's spark user (uid 185), nothing extra.
@@ -92,6 +101,10 @@ spec:
               envFrom:
                 - configMapRef:
                     name: lichess-config
+              env:
+                - { name: LICHESS_CATALOG_TOKEN_FILE, value: /var/run/secrets/lakekeeper/token }
+              volumeMounts:
+                - { name: catalog-token, mountPath: /var/run/secrets/lakekeeper, readOnly: true }
             executor:
               serviceAccount: lichess-jobs
               # Pod Security "restricted" (#62): the image's spark user (uid 185), nothing extra.
