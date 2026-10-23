@@ -34,7 +34,7 @@ dashboard, an MCP server and a chat on `chess-*.generops.dev`. It's a portfolio 
 |---|---|
 | `infra/bootstrap` | state account, project budget (local state) |
 | `infra/platform` | lake (ADLS Gen2, HNS), VNet/subnet, lifecycle rule for landed Parquet |
-| `infra/compute` | ACR, AKS (system pool autoscaling 1–3, spot `batch` pool 0–4), Key Vault, identities (jobs, CI, ESO, Kyverno, Grafana, Lakekeeper, Trino, chat), Managed Prometheus + alerts |
+| `infra/compute` | ACR, AKS (system pool autoscaling 1–3, spot `batch` pool 0–4, KEDA add-on), Key Vault, identities (jobs, CI, ESO, Kyverno, Grafana, Lakekeeper, Trino, chat, KEDA), Managed Prometheus + alerts |
 | `infra/gitops` | Argo CD (+ Entra SSO via workload identity), cluster facts, namespaces/SAs, Cloudflare Tunnel + Access + DNS, Entra apps (Argo CD, MCP, Chat, Claude API audience) (needs `CLOUDFLARE_API_TOKEN`) |
 | `deploy/apps` | Argo CD apps (root app-of-apps); ApplicationSets where values come from facts |
 | `deploy/lichess` | WorkflowTemplates: ingest-month (land → raw → curated → gold), ingest-backfill, monthly, spark-job, jupyter, lakekeeper-bootstrap, trino-smoke; CronWorkflows lichess-monthly (daily), lake-maintenance (weekly) |
@@ -70,7 +70,7 @@ Live:
   - Azure cost exported daily to `lake.ops.azure_cost`.
 - **Query side:**
   - Lakekeeper: K8s-token auth, OpenFGA.
-  - Trino: JWT sign-in, private-CA TLS via trust-manager, read-only rules.
+  - Trino: JWT sign-in, private-CA TLS via trust-manager, read-only rules. Spot workers scale 0–2 with KEDA on Trino's CPU (Managed Prometheus).
 - **Public on `chess.generops.dev`:**
   - The dashboard (`web/`, #67): Overview and Openings.
   - The data API at `/api/v1` (#66).
@@ -110,7 +110,6 @@ Next, all by choice, none urgent:
 - Per-user attribution in the MCP audit for chat queries; it currently records the chat's identity.
 - The opening explorer: `gold.position_moves`, an API endpoint and a board page (#65); per-position data (#29).
 - Teardown (#48).
-- Trino worker autoscaling (KEDA).
 - Catalog recovery: the two CNPG Postgres clusters (Lakekeeper catalog, OpenFGA) have no backups, by
   decision. Tables come back from the lake instead: a weekly inventory + drill and a restore job
   (`spark/jobs/catalog_recovery.py`, `docs/runbooks/catalog-recovery.md`, #125).

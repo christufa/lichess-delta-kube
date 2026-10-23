@@ -18,6 +18,12 @@ resource "azurerm_kubernetes_cluster" "main" {
   oidc_issuer_enabled       = true
   workload_identity_enabled = true
 
+  # KEDA (managed add-on): scales Trino's workers from 0 on Trino's CPU, read from Managed
+  # Prometheus (monitoring.tf: id-<project>-keda; deploy/apps/trino.yaml: ScaledObject).
+  workload_autoscaler_profile {
+    keda_enabled = true
+  }
+
   # kubectl via Entra ID + Azure RBAC only. The API server's authorized IP ranges
   # are set by hand in Azure (see infra/README.md); until then it answers any IP.
   local_account_disabled            = true

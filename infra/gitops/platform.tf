@@ -26,6 +26,7 @@ locals {
     "mcp-client-id"        = azuread_application.mcp.client_id     # the MCP server's Entra app (#68)
     "chat-client-id"       = azuread_application.chat.client_id    # the chat's Entra app (#69)
     "chat-identity-id"     = local.compute.chat_identity_client_id # the chat backend's workload identity
+    "keda-client-id"       = local.compute.keda_identity_client_id # KEDA reads Prometheus (Trino autoscaling)
     # Claude for the chat, by Workload Identity Federation (infra/gitops/chat.tf); empty until set up
     "claude-audience-id"           = azuread_application.claude_audience.client_id
     "anthropic-organization-id"    = var.anthropic_federation.organization_id
